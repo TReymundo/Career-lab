@@ -203,116 +203,216 @@ export default function Start({ store, reload }: { store: Store; reload: () => P
   const done = (id: string) => { void api.setSetting(`step:${id}`, 'done').then(reload); };
 
   /**
-   * The CV phase finishing is the one genuine milestone in setup: it is the moment the app
-   * has produced something the user can hold. It is announced once and never again.
+   * Finishing the CV is the one genuine milestone in setup, so it is a button you press
+   * rather than something that fires at you. Pressing it saves the CV where the rest of the
+   * app can find it, then opens the reveal.
    */
   const cvPhase = PHASES.find((p) => p.id === 'cv');
   const cvDone = Boolean(cvPhase?.steps.every((s) => store.setting[`step:${s.id}`] === 'done' || s.auto?.(store)));
-  const alreadyCelebrated = store.setting['celebrated:cv'] === 'done';
+  const [finishing, setFinishing] = useState(false);
 
-  // React runs effects twice in development; without this the announcement arrives twice.
-  const announced = useRef(false);
+  const finish = async () => {
+    setFinishing(true);
+    const track = firstTrack(store);
+    const markdown = buildCV(store.profile, store.experience, { track, lang, template: 'ats' });
 
-  useEffect(() => {
-    if (!cvDone || alreadyCelebrated || announced.current) return;
-    announced.current = true;
+    // Keep it out of the way if an identical version is already filed.
+    const already = store.document.some((d) => d.kind === 'cv' && d.body.trim() === markdown.trim());
+    if (!already) {
+      await api.create('document', {
+        application_id: null,
+        kind: 'cv',
+        title: `${t('CV', 'CV')} (${lang.toUpperCase()}) — ${t('from setup', 'desde la configuración')} — ${new Date().toLocaleDateString('en-GB')}`,
+        body: markdown,
+      });
+    }
+    if (store.setting['celebrated:cv'] !== 'done') {
+      await api.setSetting('celebrated:cv', 'done');
+      toast(
+        t('Jobs unlocked', 'Avisos desbloqueado'),
+        t('A new section opened in the sidebar. That is where the AI looks for openings that match your CV.',
+          'Se abrió una sección nueva en el menú. Ahí la IA busca avisos que coincidan con tu CV.'),
+      );
+    }
+    await reload();
+    setFinishing(false);
     setReveal(true);
-    void api.setSetting('celebrated:cv', 'done').then(reload);
-    toast(
-      t('Jobs unlocked', 'Avisos desbloqueado'),
-      t('A new section opened in the sidebar. That is where the AI looks for openings that match your CV.',
-        'Se abrió una sección nueva en el menú. Ahí la IA busca avisos que coincidan con tu CV.'),
-    );
-  }, [cvDone, alreadyCelebrated]);
+  };
+
   const next = () => {
     const i = ALL_STEPS.findIndex((s) => s.id === active);
     setOpenId(ALL_STEPS[i + 1]?.id ?? null);
   };
   const ctx = { store, reload, done, next, t, lang };
 
+  const activePhase = PHASES.find((p) => p.steps.some((st) => st.id === active))?.id ?? null;
+
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col-reverse gap-6 lg:flex-row lg:items-start">
       {reveal && <CVReveal store={store} onClose={() => setReveal(false)} />}
 
-      <Card className="p-5">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <p className="text-3xl font-semibold tabular-nums text-ink-900">
-              {doneCount}<span className="text-ink-400">/{ALL_STEPS.length}</span>
-            </p>
-            <p className="text-sm text-ink-500">
-              {t('This screen is only about you and your CV. Finding jobs, applying and tracking each have their own screen, and open as you get there.',
-                 'Esta pantalla es sólo sobre vos y tu CV. Buscar avisos, postularte y hacer seguimiento tienen su propia pantalla, y se abren cuando llegás.')}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {cvDone && (
-              <Button onClick={() => setReveal(true)}>{t('See my CV', 'Ver mi CV')}</Button>
-            )}
-            {doneCount === ALL_STEPS.length && (
-              <Link to="/jobs"><Button variant="primary">{t('Setup done → find jobs', 'Listo → buscar avisos')}</Button></Link>
-            )}
-          </div>
-        </div>
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-sunken">
-          <div className="h-full rounded-full bg-brand-500 transition-all duration-500" style={{ width: `${(doneCount / ALL_STEPS.length) * 100}%` }} />
-        </div>
-      </Card>
+      <div className="min-w-0 flex-1 space-y-6">
+        {PHASES.map((phase, pi) => {
+          const steps = state.filter((s) => phase.steps.some((p) => p.id === s.step.id));
+          const phaseDone = steps.every((s) => s.done);
+          const isHere = activePhase === phase.id;
 
-      {PHASES.map((phase, pi) => {
-        const steps = state.filter((s) => phase.steps.some((p) => p.id === s.step.id));
-        const phaseDone = steps.every((s) => s.done);
-        return (
-          <section key={phase.id}>
-            <div className="mb-2 flex flex-wrap items-baseline gap-3">
-              <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-semibold ${
-                phaseDone ? 'bg-brand-500 text-white' : 'bg-sunken text-ink-500'}`}>
-                {phaseDone ? '✓' : pi + 1}
-              </span>
-              <h2 className={`text-sm font-semibold uppercase tracking-wider ${phaseDone ? 'text-ink-400' : 'text-ink-900'}`}>
-                {phase.title(t)}
-              </h2>
-              <p className="text-xs text-ink-500">{phase.blurb(t)}</p>
+          return (
+            <section
+              key={phase.id}
+              id={`phase-${phase.id}`}
+              /* Everything that is not where you are recedes, so the eye has one place to go. */
+              className={`rounded-2xl transition-all duration-300 ${
+                isHere ? 'bg-surface/70 p-3 ring-1 ring-brand-200 sm:p-4'
+                       : activePhase ? 'p-3 opacity-55 sm:p-4 hover:opacity-90' : 'p-3 sm:p-4'}`}
+            >
+              <div className="mb-2 flex flex-wrap items-baseline gap-3">
+                <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-semibold transition ${
+                  phaseDone ? 'bg-brand-500 text-white' : isHere ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-300' : 'bg-sunken text-ink-500'}`}>
+                  {phaseDone ? '✓' : pi + 1}
+                </span>
+                <h2 className={`text-sm font-semibold uppercase tracking-wider transition ${
+                  isHere ? 'text-ink-900' : phaseDone ? 'text-ink-400' : 'text-ink-700'}`}>
+                  {phase.title(t)}
+                </h2>
+                <p className="text-xs text-ink-500">{phase.blurb(t)}</p>
+              </div>
+
+              <div className="ml-3 space-y-2 border-l border-line pl-5">
+                {steps.map(({ step, done: stepDone }) => {
+                  const isOpen = active === step.id;
+                  return (
+                    <Card
+                      key={step.id}
+                      className={`overflow-hidden transition-all duration-200 ${
+                        isOpen
+                          ? 'border-brand-400 shadow-[0_10px_30px_-18px_rgb(16_35_26/.55)] ring-2 ring-brand-100'
+                          : 'hover:border-line-strong'}`}
+                    >
+                      <button onClick={() => setOpenId(isOpen ? '' : step.id)}
+                              className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-brand-50">
+                        <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] transition ${
+                          stepDone ? 'bg-brand-500 text-white'
+                                   : isOpen ? 'border-2 border-brand-400 bg-surface' : 'border border-line-strong bg-surface text-ink-400'}`}>
+                          {stepDone ? '✓' : ''}
+                        </span>
+                        <span className={`min-w-0 flex-1 text-sm transition ${
+                          stepDone ? 'font-medium text-ink-400 line-through decoration-brand-400'
+                                   : isOpen ? 'font-semibold text-ink-900' : 'font-medium text-ink-700'}`}>
+                          {step.title(t)}
+                        </span>
+                        {step.optional && <Badge tone="slate">{t('optional', 'opcional')}</Badge>}
+                        <span className="text-ink-400">{isOpen ? '▾' : '▸'}</span>
+                      </button>
+
+                      {isOpen && (
+                        <div className="animate-fade space-y-4 border-t border-line px-4 py-4">
+                          <p className="text-sm leading-relaxed text-ink-700">{step.help(t)}</p>
+                          {step.render(ctx)}
+                          {!stepDone && (
+                            <button onClick={() => { done(step.id); next(); }} className="text-xs text-ink-400 underline hover:text-ink-700">
+                              {t('Skip this step', 'Saltear este paso')}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })}
+                {phaseDone && phase.done && <PhaseDone {...phase.done(t)} />}
+              </div>
+            </section>
+          );
+        })}
+
+        {/* The end of the road: one button, and it is the point of the whole screen. */}
+        <Card className={`p-5 transition-all duration-300 ${cvDone ? 'border-brand-300 bg-brand-50/60' : ''}`}>
+          {cvDone ? (
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="min-w-0 flex-1">
+                <p className="text-base font-semibold text-ink-900">
+                  {t('Your CV is ready to be made.', 'Tu CV está listo para armarse.')}
+                </p>
+                <p className="mt-0.5 text-sm text-ink-700">
+                  {t('This saves it, shows you the finished page, and opens the job search.',
+                     'Esto lo guarda, te muestra la página terminada, y abre la búsqueda de avisos.')}
+                </p>
+              </div>
+              <Button variant="primary" className="px-6 py-3 text-base" disabled={finishing} onClick={finish}>
+                {finishing ? t('Making it…', 'Armándolo…') : t('Finish and create my CV', 'Terminar y crear mi CV')}
+              </Button>
             </div>
-
-            <div className="ml-3 space-y-2 border-l border-line pl-5">
-              {steps.map(({ step, done: stepDone }) => {
-                const isOpen = active === step.id;
-                return (
-                  <Card key={step.id} className={`overflow-hidden transition ${isOpen ? 'border-brand-300 shadow-[0_8px_24px_-18px_rgb(16_35_26/.5)]' : ''}`}>
-                    <button onClick={() => setOpenId(isOpen ? '' : step.id)}
-                            className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-brand-50">
-                      <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] transition ${
-                        stepDone ? 'bg-brand-500 text-white' : 'border border-line-strong bg-surface text-ink-400'}`}>
-                        {stepDone ? '✓' : ''}
-                      </span>
-                      <span className={`min-w-0 flex-1 text-sm font-medium transition ${
-                        stepDone ? 'text-ink-400 line-through decoration-brand-400' : 'text-ink-900'}`}>
-                        {step.title(t)}
-                      </span>
-                      {step.optional && <Badge tone="slate">{t('optional', 'opcional')}</Badge>}
-                      <span className="text-ink-400">{isOpen ? '▾' : '▸'}</span>
-                    </button>
-
-                    {isOpen && (
-                      <div className="animate-fade space-y-4 border-t border-line px-4 py-4">
-                        <p className="text-sm leading-relaxed text-ink-700">{step.help(t)}</p>
-                        {step.render(ctx)}
-                        {!stepDone && (
-                          <button onClick={() => { done(step.id); next(); }} className="text-xs text-ink-400 underline hover:text-ink-700">
-                            {t('Skip this step', 'Saltear este paso')}
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </Card>
-                );
-              })}
-              {phaseDone && phase.done && <PhaseDone {...phase.done(t)} />}
+          ) : (
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="min-w-0 flex-1">
+                <p className="text-base font-semibold text-ink-700">
+                  {t('Finish and create my CV', 'Terminar y crear mi CV')}
+                </p>
+                <p className="mt-0.5 text-sm text-ink-500">
+                  {t('Complete the steps above and this lights up. It makes the CV, shows it to you, and unlocks the job search.',
+                     'Completá los pasos de arriba y esto se enciende. Arma el CV, te lo muestra, y desbloquea la búsqueda de avisos.')}
+                </p>
+              </div>
+              <Button variant="primary" className="px-6 py-3 text-base" disabled>
+                {t('Finish and create my CV', 'Terminar y crear mi CV')}
+              </Button>
             </div>
-          </section>
-        );
-      })}
+          )}
+        </Card>
+      </div>
+
+      {/* Progress rail: where you are, at a glance, without scrolling back up. */}
+      <aside className="lg:sticky lg:top-24 lg:w-56 lg:shrink-0">
+        <Card className="p-4">
+          <div className="flex items-baseline gap-2">
+            <p className="text-2xl font-semibold tabular-nums text-ink-900">{doneCount}</p>
+            <p className="text-sm text-ink-400">/ {ALL_STEPS.length}</p>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-sunken">
+            <div className="h-full rounded-full bg-brand-500 transition-all duration-500"
+                 style={{ width: `${(doneCount / ALL_STEPS.length) * 100}%` }} />
+          </div>
+
+          <ol className="mt-4 space-y-3">
+            {PHASES.map((phase, pi) => {
+              const steps = state.filter((s) => phase.steps.some((p) => p.id === s.step.id));
+              const phaseDone = steps.every((s) => s.done);
+              const isHere = activePhase === phase.id;
+              return (
+                <li key={phase.id}>
+                  <button
+                    onClick={() => setOpenId(steps.find((s) => !s.done)?.step.id ?? steps[0]?.step.id ?? null)}
+                    className="flex w-full items-start gap-2 text-left"
+                  >
+                    <span className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] font-semibold transition ${
+                      phaseDone ? 'bg-brand-500 text-white'
+                                : isHere ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-300' : 'bg-sunken text-ink-400'}`}>
+                      {phaseDone ? '✓' : pi + 1}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className={`block text-xs transition ${isHere ? 'font-semibold text-ink-900' : 'text-ink-500'}`}>
+                        {phase.title(t)}
+                      </span>
+                      <span className="block text-[11px] tabular-nums text-ink-400">
+                        {steps.filter((s) => s.done).length}/{steps.length}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+
+          {cvDone && (
+            <Button className="mt-4 w-full" onClick={() => setReveal(true)}>{t('See my CV', 'Ver mi CV')}</Button>
+          )}
+
+          <p className="mt-4 border-t border-line pt-3 text-[11px] leading-relaxed text-ink-400">
+            {t('This screen is only you and your CV. Jobs, applying and tracking have their own screens.',
+               'Esta pantalla es sólo vos y tu CV. Avisos, postulaciones y seguimiento tienen sus propias pantallas.')}
+          </p>
+        </Card>
+      </aside>
     </div>
   );
 }

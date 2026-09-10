@@ -31,8 +31,9 @@ const NAV = [
     unlock: (s: Store) => s.experience.some((e) => parseBullets(e.bullets).length > 0),
     opens: (t: T) => t('Opens once your CV has one line in it', 'Se abre cuando tu CV tiene una línea') },
   { to: '/documents', icon: '❐', label: (t: T) => t('Documents', 'Documentos'), sub: (t: T) => t('CV, letters, prep', 'CV, cartas, preparación'),
-    unlock: (s: Store) => s.application.length > 0,
-    opens: (t: T) => t('Opens once you pick a job to apply to', 'Se abre cuando elegís un aviso') },
+    // Finishing the CV files it here, so this has to be reachable the moment that happens.
+    unlock: (s: Store) => s.application.length > 0 || s.document.length > 0,
+    opens: (t: T) => t('Opens once you create your CV', 'Se abre cuando creás tu CV') },
   { to: '/pipeline', icon: '▤', label: (t: T) => t('Pipeline', 'Tablero'), sub: (t: T) => t('Track applications', 'Seguí tus postulaciones'),
     unlock: (s: Store) => s.application.length > 0,
     opens: (t: T) => t('Opens once you pick a job to apply to', 'Se abre cuando elegís un aviso') },
