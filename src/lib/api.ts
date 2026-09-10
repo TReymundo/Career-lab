@@ -37,7 +37,16 @@ export const api = {
 
   promote: (jobId: number, track?: string) =>
     post(`/api/jobs/${jobId}/promote`, { track }) as Promise<{ application_id: number; already: boolean }>,
+
+  emailStatus: () => fetch('/api/email/status').then(json) as Promise<{ configured: boolean; user: string; host: string }>,
+  emailScan: (days: number) => post('/api/email/scan', { days }) as Promise<{ proposals: EmailProposal[] }>,
+  emailApply: (proposals: EmailProposal[]) => post('/api/email/apply', { proposals }),
 };
+
+export interface EmailProposal {
+  application_id: number; company: string; role: string; from: string; subject: string;
+  date: string; current: string; proposed: string; matched: string; confidence: 'high' | 'medium';
+}
 
 const post = (url: string, body: unknown) =>
   fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(json);

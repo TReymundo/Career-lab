@@ -1,29 +1,86 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink-950: #0a0c10;
-  --color-ink-900: #0f1219;
-  --color-ink-850: #141821;
-  --color-ink-800: #1a1f2b;
-  --color-ink-700: #262d3d;
-  --color-ink-600: #3a4356;
-  --color-accent: #c9a227;
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  /* Light canvas, fresh green. Greens carry meaning: brand-600 is action, brand-100 is a resting tint. */
+  --color-canvas: #f4f8f5;
+  --color-surface: #ffffff;
+  --color-sunken: #eef4f0;
+  --color-line: #dde8e1;
+  --color-line-strong: #c6d8cd;
+
+  --color-brand-50: #f0faf4;
+  --color-brand-100: #dcf5e6;
+  --color-brand-200: #b9ead0;
+  --color-brand-300: #86d9b0;
+  --color-brand-400: #4cc38a;
+  --color-brand-500: #2fa96e;
+  --color-brand-600: #1f8c58;
+  --color-brand-700: #196f47;
+  --color-brand-900: #0d3b26;
+
+  --color-ink-900: #10231a;
+  --color-ink-700: #2c4438;
+  --color-ink-500: #5b7268;
+  --color-ink-400: #83998f;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
 
 html, body, #root { height: 100%; }
 body {
-  background: var(--color-ink-950);
-  color: #e6e9ef;
+  background: var(--color-canvas);
+  color: var(--color-ink-900);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
-::selection { background: color-mix(in oklab, var(--color-accent) 40%, transparent); }
+::selection { background: var(--color-brand-200); }
+
+/* Scrollbars, so the light theme does not get dark browser furniture in the middle of it. */
+* { scrollbar-color: var(--color-line-strong) transparent; scrollbar-width: thin; }
+
+/* --- Motion. Everything here is disabled wholesale under prefers-reduced-motion. --- */
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slide-over { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes pop { 0% { transform: scale(.96); } 60% { transform: scale(1.02); } 100% { transform: scale(1); } }
+@keyframes grow-bar { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+
+.animate-rise { animation: rise .32s cubic-bezier(.22,.9,.3,1) both; }
+.animate-fade { animation: fade .25s ease both; }
+.animate-slide-over { animation: slide-over .28s cubic-bezier(.22,.9,.3,1) both; }
+.animate-pop { animation: pop .22s ease both; }
+.animate-bar { animation: grow-bar .5s cubic-bezier(.22,.9,.3,1) both; transform-origin: left; }
+
+/* Staggered list entrances — cheap, and it makes a long job grid feel alive rather than dumped. */
+.stagger > * { animation: rise .3s cubic-bezier(.22,.9,.3,1) both; }
+.stagger > *:nth-child(1) { animation-delay: .02s }
+.stagger > *:nth-child(2) { animation-delay: .04s }
+.stagger > *:nth-child(3) { animation-delay: .06s }
+.stagger > *:nth-child(4) { animation-delay: .08s }
+.stagger > *:nth-child(5) { animation-delay: .10s }
+.stagger > *:nth-child(6) { animation-delay: .12s }
+.stagger > *:nth-child(7) { animation-delay: .14s }
+.stagger > *:nth-child(8) { animation-delay: .16s }
+
+.card-hover { transition: box-shadow .2s ease, transform .2s ease, border-color .2s ease; }
+.card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 24px -14px rgb(16 35 26 / .35); }
+
+.skeleton {
+  background: linear-gradient(90deg, var(--color-sunken) 25%, #fff 50%, var(--color-sunken) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .card-hover:hover { transform: none; }
+}
 
 /* Printing a document view should yield a clean A4 page, not a screenshot of the app. */
 @media print {
   .no-print { display: none !important; }
-  body { background: #fff; color: #000; }
+  body { background: #fff; }
   .print-sheet { box-shadow: none !important; border: 0 !important; padding: 0 !important; max-width: none !important; }
   @page { margin: 18mm 16mm; }
 }

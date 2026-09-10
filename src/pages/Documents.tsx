@@ -3,13 +3,15 @@ import { useSearchParams } from 'react-router-dom';
 import { Area, Badge, Button, Card, Empty, Field, Select, SectionTitle } from '../components/ui.tsx';
 import { api, fmtDate } from '../lib/api.ts';
 import { TEMPLATES, buildCV, buildCover, keywordGap, missingTranslations, openPlaceholders, type TemplateId } from '../lib/templates.ts';
-import { TRACKS, type Doc, type Lang, type Store, type Track } from '../lib/types.ts';
+import { coldOutreach, interviewPrep, tailoringPlan } from '../lib/tailor.ts';
+import { TRACKS, type Doc, type DocKind, type Lang, type Store, type Track } from '../lib/types.ts';
 
-/** Minimal markdown → HTML for the CV preview. Handles exactly what buildCV emits. */
+/** Minimal markdown → HTML for the preview. Handles exactly what the generators emit. */
 function renderMarkdown(md: string): string {
   const esc = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!));
   const inline = (s: string) =>
     esc(s)
+      .replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.+?)\*/g, '<em>$1</em>')
       .replace(/ {2}$/, '<br/>');
@@ -31,13 +33,28 @@ function renderMarkdown(md: string): string {
   return out.join('\n');
 }
 
+const KINDS: { id: DocKind; label: string; es: string }[] = [
+  { id: 'cv', label: 'CV', es: 'CV' },
+  { id: 'cover', label: 'Cover letter', es: 'Carta de presentación' },
+  { id: 'outreach', label: 'Cold outreach DM', es: 'Mensaje en frío' },
+  { id: 'prep', label: 'Interview prep sheet', es: 'Hoja de entrevista' },
+  { id: 'plan', label: 'Tailoring plan', es: 'Plan de adaptación' },
+];
+
+const KIND_TONE: Record<string, string> = { cv: 'sky', cover: 'violet', outreach: 'amber', prep: 'emerald', plan: 'green' };
+const PACK: DocKind[] = ['cv', 'cover', 'outreach', 'prep', 'plan'];
+
 export default function Documents({ store, reload }: { store: Store; reload: () => Promise<void> }) {
-  // The Jobs screen hands off through the URL: /documents?app=12&lang=es&track=markets
+  // Jobs hands off through the URL: /documents?apps=3,4,5&lang=es&track=markets
   const [params] = useSearchParams();
-  const [appId, setAppId] = useState<number | ''>(
-    params.get('app') ? Number(params.get('app')) : store.application[0]?.id ?? '',
+  const queue = useMemo(
+    () => (params.get('apps') ?? params.get('app') ?? '').split(',').map(Number).filter(Boolean),
+    [params],
   );
-  const [kind, setKind] = useState<'cv' | 'cover'>('cv');
+
+  const [qIndex, setQIndex] = useState(0);
+  const [appId, setAppId] = useState<number | ''>(queue[0] ?? store.application[0]?.id ?? '');
+  const [kind, setKind] = useState<DocKind>('cv');
   const [lang, setLang] = useState<Lang>((params.get('lang') as Lang) ?? 'en');
   const [template, setTemplate] = useState<TemplateId>('ats');
   const [track, setTrack] = useState<Track>((params.get('track') as Track) ?? 'markets');
@@ -46,17 +63,31 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
   const [contact, setContact] = useState('');
   const [body, setBody] = useState('');
   const [touched, setTouched] = useState(false);
+  const [batchMsg, setBatchMsg] = useState('');
 
   const app = store.application.find((a) => a.id === appId) ?? null;
 
-  // Follow the application's own track, unless the caller pinned one in the URL.
   useEffect(() => { if (app && !params.get('track')) setTrack(app.track); }, [app?.id]);
 
-  const generated = useMemo(() => {
-    if (kind === 'cv') return buildCV(store.profile, store.experience, { track, lang, template });
-    if (!app) return '';
-    return buildCover({ profile: store.profile, app: { ...app, track }, lang, hook, proof, contact });
-  }, [kind, track, lang, template, app?.id, hook, proof, contact, store.profile, store.experience]);
+  const cvText = useMemo(
+    () => buildCV(store.profile, store.experience, { track, lang, template }),
+    [store.profile, store.experience, track, lang, template],
+  );
+
+  const build = (k: DocKind, target = app): string => {
+    if (k === 'cv') return cvText;
+    if (!target) return '';
+    const a = { ...target, track };
+    if (k === 'cover') return buildCover({ profile: store.profile, app: a, lang, hook, proof, contact });
+    if (k === 'outreach') return coldOutreach(store.profile, a, contact, lang);
+    if (k === 'prep') return interviewPrep(a, store.experience, lang);
+    return tailoringPlan(a, store.experience, cvText, lang);
+  };
+
+  const generated = useMemo(
+    () => build(kind),
+    [kind, track, lang, template, app?.id, app?.jd, hook, proof, contact, store.profile, store.experience],
+  );
 
   useEffect(() => { if (!touched) setBody(generated); }, [generated, touched]);
 
@@ -68,24 +99,71 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
     [lang, kind, store.experience, track],
   );
   const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  const kindLabel = (k: DocKind) => {
+    const row = KINDS.find((x) => x.id === k)!;
+    return lang === 'es' ? row.es : row.label;
+  };
+
+  const saveOne = (k: DocKind, content: string, target = app) =>
+    api.create<Doc>('document', {
+      application_id: target?.id ?? null,
+      kind: k,
+      title: `${kindLabel(k)} (${lang.toUpperCase()}) — ${target ? target.company : TRACKS.find((t) => t.id === track)?.short} — ${new Date().toLocaleDateString('en-GB')}`,
+      body: content,
+    });
 
   const save = async () => {
-    await api.create<Doc>('document', {
-      application_id: app?.id ?? null,
-      kind,
-      title: `${kind === 'cv' ? 'CV' : 'Cover letter'} (${lang.toUpperCase()}) — ${app ? app.company : TRACKS.find((t) => t.id === track)?.short} — ${new Date().toLocaleDateString('en-GB')}`,
-      body: text,
-    });
+    await saveOne(kind, text);
     await reload();
+    setBatchMsg(`Saved ${kindLabel(kind)}.`);
+  };
+
+  /** The whole pack for one application, or for every application handed over from Jobs. */
+  const generatePack = async (all: boolean) => {
+    const targets = all && queue.length
+      ? store.application.filter((a) => queue.includes(a.id))
+      : app ? [app] : [];
+    if (!targets.length) return;
+
+    let n = 0;
+    for (const t of targets) {
+      for (const k of PACK) {
+        const content = build(k, t);
+        if (!content.trim()) continue;
+        await saveOne(k, content, t);
+        n++;
+      }
+      if (t.status === 'saved') await api.update('application', t.id, { status: 'tailored' });
+    }
+    await reload();
+    setBatchMsg(`${n} documents saved across ${targets.length} application${targets.length > 1 ? 's' : ''}. Those rows moved to Tailored.`);
+  };
+
+  const stepTo = (i: number) => {
+    const id = queue[i];
+    if (!id) return;
+    setQIndex(i);
+    setAppId(id);
+    setTouched(false);
   };
 
   return (
     <div className="space-y-6">
+      {queue.length > 1 && (
+        <Card className="flex flex-wrap items-center gap-3 border-brand-200 bg-brand-50 px-4 py-2.5 text-sm">
+          <span className="font-medium text-brand-700">Batch from Jobs — {qIndex + 1} of {queue.length}</span>
+          <Button disabled={qIndex === 0} onClick={() => stepTo(qIndex - 1)}>← Prev</Button>
+          <Button disabled={qIndex >= queue.length - 1} onClick={() => stepTo(qIndex + 1)}>Next →</Button>
+          <Button variant="primary" className="ml-auto" onClick={() => generatePack(true)}>
+            Generate full pack for all {queue.length}
+          </Button>
+        </Card>
+      )}
+
       <Card className="p-4">
         <div className="grid gap-3 md:grid-cols-4">
-          <Select label="Document" value={kind} onChange={(e) => { setKind(e.target.value as 'cv' | 'cover'); setTouched(false); }}>
-            <option value="cv">CV</option>
-            <option value="cover">Cover letter</option>
+          <Select label="Document" value={kind} onChange={(e) => { setKind(e.target.value as DocKind); setTouched(false); }}>
+            {KINDS.map((k) => <option key={k.id} value={k.id}>{lang === 'es' ? k.es : k.label}</option>)}
           </Select>
           <Select label="For application" value={appId} onChange={(e) => { setAppId(e.target.value ? Number(e.target.value) : ''); setTouched(false); }}>
             <option value="">— none (generic) —</option>
@@ -101,45 +179,62 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
         </div>
 
         <div className="mt-3 grid gap-3 md:grid-cols-4">
-          <Select label="Template" value={template} onChange={(e) => { setTemplate(e.target.value as TemplateId); setTouched(false); }}
-                  disabled={kind !== 'cv'}>
+          <Select label="Template" value={template} disabled={kind !== 'cv'}
+                  onChange={(e) => { setTemplate(e.target.value as TemplateId); setTouched(false); }}>
             {TEMPLATES.map((t) => <option key={t.id} value={t.id}>{t.label[lang]}</option>)}
           </Select>
-          <p className="self-end pb-2 text-xs text-slate-500 md:col-span-2">
+          <p className="self-end pb-2 text-xs text-ink-500 md:col-span-2">
             {kind === 'cv' ? TEMPLATES.find((t) => t.id === template)?.note[lang] : ''}
           </p>
-          <div className="flex items-end gap-2">
+          <div className="flex flex-wrap items-end gap-2">
             <Button onClick={() => { setTouched(false); setBody(generated); }}>Regenerate</Button>
-            <Button variant="primary" onClick={save}>Save version</Button>
+            <Button variant="soft" onClick={save}>Save version</Button>
           </div>
         </div>
 
-        {kind === 'cover' && (
+        {(kind === 'cover' || kind === 'outreach') && (
           <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <Area label="Your hook — why this firm, specifically" rows={3} value={hook} onChange={(e) => { setHook(e.target.value); setTouched(false); }}
-                  placeholder="A desk, a deal, a person you spoke to. Anything a competitor could copy into their own letter is not a hook." />
-            <Area label="Your strongest proof story" rows={3} value={proof} onChange={(e) => { setProof(e.target.value); setTouched(false); }}
-                  placeholder="Situation, what you personally did, the number that came out of it." />
-            <Field label="Name of the person you spoke to (optional)" value={contact} onChange={(e) => { setContact(e.target.value); setTouched(false); }} />
+            {kind === 'cover' && (
+              <>
+                <Area label="Your hook — why this firm, specifically" rows={3} value={hook}
+                      onChange={(e) => { setHook(e.target.value); setTouched(false); }}
+                      placeholder="A desk, a deal, a person you spoke to. Anything a competitor could paste into their own letter is not a hook." />
+                <Area label="Your strongest proof story" rows={3} value={proof}
+                      onChange={(e) => { setProof(e.target.value); setTouched(false); }}
+                      placeholder="Situation, what you personally did, the number that came out of it." />
+              </>
+            )}
+            <Field label={kind === 'outreach' ? 'Send it to (name)' : 'Name of the person you spoke to (optional)'}
+                   value={contact} onChange={(e) => { setContact(e.target.value); setTouched(false); }} />
           </div>
         )}
 
-        {kind === 'cover' && !app && (
-          <p className="mt-3 text-sm text-amber-300">Pick an application — a cover letter needs the company and role.</p>
+        {kind !== 'cv' && !app && (
+          <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            Pick an application — this document needs the company and role.
+          </p>
         )}
+
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-3">
+          <Button variant="primary" disabled={!app} onClick={() => generatePack(false)}>
+            Generate full pack for {app?.company ?? 'this application'}
+          </Button>
+          <span className="text-xs text-ink-500">CV · cover letter · outreach DM · prep sheet · tailoring plan, saved together.</span>
+          {batchMsg && <span className="animate-fade ml-auto text-sm font-medium text-brand-700">{batchMsg}</span>}
+        </div>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[1.25fr_1fr]">
         <div>
-          <SectionTitle right={<span className="text-xs text-slate-500">{words} words</span>}>Draft</SectionTitle>
-          <Area rows={26} value={text} onChange={(e) => { setTouched(true); setBody(e.target.value); }} className="font-mono text-[13px]" />
-          <div className="no-print mt-2 flex gap-2">
+          <SectionTitle right={<span className="text-xs text-ink-400">{words} words</span>}>Draft</SectionTitle>
+          <Area rows={24} value={text} onChange={(e) => { setTouched(true); setBody(e.target.value); }} className="font-mono text-[13px]" />
+          <div className="no-print mt-2 flex flex-wrap gap-2">
             <Button onClick={() => navigator.clipboard.writeText(text)}>Copy</Button>
             <Button onClick={() => {
               const blob = new Blob([text], { type: 'text/markdown' });
               const a = document.createElement('a');
               a.href = URL.createObjectURL(blob);
-              a.download = `${kind}-${app?.company ?? track}.md`.replace(/\s+/g, '-').toLowerCase();
+              a.download = `${kind}-${app?.company ?? track}-${lang}.md`.replace(/\s+/g, '-').toLowerCase();
               a.click();
               URL.revokeObjectURL(a.href);
             }}>Download .md</Button>
@@ -150,58 +245,58 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
         <div className="space-y-6">
           <div>
             <SectionTitle>Checks</SectionTitle>
-            <Card className="space-y-3 p-4 text-sm">
+            <Card className="space-y-4 p-4 text-sm">
               <div>
-                <div className="mb-1 text-[11px] uppercase tracking-wider text-slate-400">Unfilled placeholders</div>
-                {holes.length === 0 ? <span className="text-emerald-300">None — nothing bracketed left.</span> : (
-                  <ul className="space-y-1 text-amber-300">{holes.map((h, i) => <li key={i}>{h}</li>)}</ul>
+                <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-ink-500">Unfilled placeholders</p>
+                {holes.length === 0 ? <span className="text-emerald-700">None — nothing bracketed left.</span> : (
+                  <ul className="space-y-1 text-amber-700">{holes.map((h, i) => <li key={i}>{h}</li>)}</ul>
                 )}
               </div>
+
               {lang === 'es' && kind === 'cv' && (
                 <div>
-                  <div className="mb-1 text-[11px] uppercase tracking-wider text-slate-400">Bullets sin traducir</div>
-                  {untranslated.length === 0
-                    ? <span className="text-emerald-300">Todo traducido.</span>
-                    : (
-                      <>
-                        <p className="text-amber-300">
-                          {untranslated.length} bullet{untranslated.length > 1 ? 's' : ''} aparecen en inglés porque no tienen versión en español.
-                        </p>
-                        <ul className="mt-1 space-y-0.5 text-xs text-slate-500">
-                          {untranslated.slice(0, 5).map((u, i) => <li key={i} className="truncate">{u.org}: {u.text}</li>)}
-                        </ul>
-                        <p className="mt-1 text-xs text-slate-600">Añade la versión ES en Master CV, campo “ES” de cada bullet.</p>
-                      </>
-                    )}
+                  <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-ink-500">Bullets sin traducir</p>
+                  {untranslated.length === 0 ? <span className="text-emerald-700">Todo traducido.</span> : (
+                    <>
+                      <p className="text-amber-700">
+                        {untranslated.length} bullet{untranslated.length > 1 ? 's' : ''} aparecen en inglés porque no tienen versión en español.
+                      </p>
+                      <ul className="mt-1 space-y-0.5 text-xs text-ink-500">
+                        {untranslated.slice(0, 5).map((u, i) => <li key={i} className="truncate">{u.org}: {u.text}</li>)}
+                      </ul>
+                      <p className="mt-1 text-xs text-ink-400">Añadí la versión ES en Master CV, campo “ES” de cada bullet.</p>
+                    </>
+                  )}
                 </div>
               )}
+
               <div>
-                <div className="mb-1 text-[11px] uppercase tracking-wider text-slate-400">
-                  Words in the posting your draft never uses
-                </div>
-                {!app?.jd ? <span className="text-slate-500">Paste the job description on the application to run this check.</span>
-                  : gaps.length === 0 ? <span className="text-emerald-300">Good coverage.</span> : (
+                <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-ink-500">
+                  ATS keywords the posting uses and your draft does not
+                </p>
+                {!app?.jd ? <span className="text-ink-500">Paste the job description on the application to run this check.</span>
+                  : gaps.length === 0 ? <span className="text-emerald-700">Good coverage.</span> : (
                     <div className="flex flex-wrap gap-1.5">
                       {gaps.map((g) => <Badge key={g.word} tone="amber">{g.word} ×{g.count}</Badge>)}
                     </div>
                   )}
-                <p className="mt-2 text-xs text-slate-600">
-                  Cover the ones that are genuinely true of you. Stuffing keywords you cannot defend in an interview is worse than missing them.
+                <p className="mt-2 text-xs text-ink-400">
+                  The <strong>Tailoring plan</strong> document shows which bullet each of these belongs in. Cover the ones that
+                  are genuinely true of you — a keyword you cannot defend in the interview is worse than a missing one.
                 </p>
               </div>
             </Card>
           </div>
 
-          {kind === 'cv' && (
-            <div>
-              <SectionTitle>Preview</SectionTitle>
-              <div className="print-sheet max-h-[520px] overflow-auto rounded-lg border border-ink-800 bg-white p-8 text-[13px] leading-relaxed text-slate-900
-                              [&_h1]:mb-1 [&_h1]:text-2xl [&_h1]:font-bold
-                              [&_h2]:mt-5 [&_h2]:mb-2 [&_h2]:border-b [&_h2]:border-slate-300 [&_h2]:pb-1 [&_h2]:text-[13px] [&_h2]:font-semibold [&_h2]:uppercase [&_h2]:tracking-wider
-                              [&_li]:mb-1 [&_li]:ml-5 [&_li]:list-disc [&_p]:mb-1"
-                   dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />
-            </div>
-          )}
+          <div>
+            <SectionTitle>Preview</SectionTitle>
+            <div className="print-sheet max-h-[520px] overflow-auto rounded-xl border border-line bg-white p-8 text-[13px] leading-relaxed text-ink-900
+                            [&_a]:text-brand-700 [&_a]:underline
+                            [&_h1]:mb-1 [&_h1]:text-2xl [&_h1]:font-bold
+                            [&_h2]:mt-5 [&_h2]:mb-2 [&_h2]:border-b [&_h2]:border-line [&_h2]:pb-1 [&_h2]:text-[13px] [&_h2]:font-semibold [&_h2]:uppercase [&_h2]:tracking-wider
+                            [&_li]:mb-1 [&_li]:ml-5 [&_li]:list-disc [&_p]:mb-1"
+                 dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />
+          </div>
         </div>
       </div>
 
@@ -210,16 +305,16 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
         {store.document.length === 0 ? (
           <Empty>Save a version before each send — when a recruiter calls in six weeks you will want the exact document they read.</Empty>
         ) : (
-          <Card className="divide-y divide-ink-800">
-            {store.document.map((d) => (
-              <div key={d.id} className="flex items-center gap-4 px-4 py-2.5 text-sm">
-                <Badge tone={d.kind === 'cv' ? 'sky' : 'violet'}>{d.kind}</Badge>
-                <span className="min-w-0 flex-1 truncate">{d.title}</span>
-                <span className="shrink-0 text-xs text-slate-500">{fmtDate(d.created_at.slice(0, 10))}</span>
+          <Card className="stagger divide-y divide-line overflow-hidden">
+            {store.document.slice(0, 20).map((d) => (
+              <div key={d.id} className="flex items-center gap-4 px-4 py-2.5 text-sm transition hover:bg-brand-50">
+                <Badge tone={KIND_TONE[d.kind] ?? 'slate'}>{d.kind}</Badge>
+                <span className="min-w-0 flex-1 truncate text-ink-700">{d.title}</span>
+                <span className="shrink-0 text-xs tabular-nums text-ink-400">{fmtDate(d.created_at.slice(0, 10))}</span>
                 <button onClick={() => { setTouched(true); setBody(d.body); setKind(d.kind); }}
-                        className="text-xs text-accent hover:underline">load</button>
+                        className="text-xs text-brand-600 hover:underline">load</button>
                 <button onClick={async () => { await api.remove('document', d.id); await reload(); }}
-                        className="text-xs text-slate-600 hover:text-rose-300">delete</button>
+                        className="text-xs text-ink-400 hover:text-rose-600">delete</button>
               </div>
             ))}
           </Card>

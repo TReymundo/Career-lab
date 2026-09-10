@@ -56,17 +56,17 @@ const app = db.prepare(
   `INSERT INTO application (company, role, track, location, status, priority, source, next_action, notes) VALUES (?,?,?,?,?,?,?,?,?)`,
 );
 
-app.run('J.P. Morgan', 'Markets Analyst Programme (internal move)', 'markets', 'Buenos Aires / NY', 'networking', 1, 'internal',
+app.run('J.P. Morgan', 'Markets Analyst Programme (internal move)', 'markets', 'Buenos Aires / NY', 'saved', 1, 'internal',
   'Ask your manager about the internal mobility timeline and who runs Markets recruiting',
   'Internal moves usually need: time in seat, manager sign-off, and someone on the receiving desk who wants you. Work out all three before the grad cycle opens.');
 
-app.run('J.P. Morgan', 'Investment Banking Analyst (internal move)', 'ib', 'Buenos Aires', 'target', 2, 'internal',
+app.run('J.P. Morgan', 'Investment Banking Analyst (internal move)', 'ib', 'Buenos Aires', 'saved', 2, 'internal',
   'Find two analysts in the BA IB team and ask for coffee', '');
 
-app.run('[Bank #2]', 'Sales & Trading Graduate Programme', 'markets', '[City]', 'target', 1, 'careers site',
+app.run('[Bank #2]', 'Sales & Trading Graduate Programme', 'markets', '[City]', 'saved', 1, 'careers site',
   'Check when the graduate cycle opens for Dec-2026 graduates', '');
 
-app.run('McKinsey / Bain / BCG', 'Business Analyst', 'consulting', 'Buenos Aires', 'target', 2, 'careers site',
+app.run('McKinsey / Bain / BCG', 'Business Analyst', 'consulting', 'Buenos Aires', 'saved', 2, 'careers site',
   'Start case practice — one case per week with a partner from ITBA',
   'MBB in BA recruit heavily from ITBA. The bottleneck is the case, not the CV.');
 

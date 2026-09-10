@@ -21,7 +21,7 @@ export default function Contacts({ store, reload }: { store: Store; reload: () =
   return (
     <div className="space-y-6">
       <SectionTitle right={<Button variant="primary" onClick={add}>+ Person</Button>}>
-        Network {overdue.length > 0 && <span className="ml-2 text-amber-300">· {overdue.length} follow-up{overdue.length > 1 ? 's' : ''} due</span>}
+        Network {overdue.length > 0 && <span className="ml-2 text-amber-600">· {overdue.length} follow-up{overdue.length > 1 ? 's' : ''} due</span>}
       </SectionTitle>
 
       {store.contact.length === 0 ? (
@@ -32,7 +32,7 @@ export default function Contacts({ store, reload }: { store: Store; reload: () =
       ) : (
         <Card className="overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-ink-850 text-[11px] uppercase tracking-wider text-slate-400">
+            <thead className="bg-sunken text-[11px] uppercase tracking-wider text-ink-500">
               <tr>
                 <th className="px-4 py-2 text-left font-medium">Name</th>
                 <th className="px-3 py-2 text-left font-medium">Where</th>
@@ -41,18 +41,18 @@ export default function Contacts({ store, reload }: { store: Store; reload: () =
                 <th className="px-3 py-2 text-right font-medium">Next</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-ink-800">
+            <tbody className="divide-y divide-line">
               {store.contact.map((c) => {
                 const n = daysUntil(c.next_touch);
                 return (
                   <tr key={c.id} onClick={() => setOpenId(c.id)}
-                      className={`cursor-pointer hover:bg-ink-850/60 ${openId === c.id ? 'bg-ink-850/80' : ''}`}>
-                    <td className="px-4 py-2.5 font-medium text-slate-100">{c.name}</td>
-                    <td className="px-3 py-2.5 text-slate-400">{[c.role, c.company].filter(Boolean).join(' · ') || '—'}</td>
-                    <td className="max-w-64 truncate px-3 py-2.5 text-slate-500">{c.how_met || '—'}</td>
-                    <td className="px-3 py-2.5 text-right text-xs tabular-nums text-slate-500">{fmtDate(c.last_touch)}</td>
+                      className={`cursor-pointer hover:bg-brand-50 ${openId === c.id ? 'bg-brand-50' : ''}`}>
+                    <td className="px-4 py-2.5 font-medium text-ink-900">{c.name}</td>
+                    <td className="px-3 py-2.5 text-ink-500">{[c.role, c.company].filter(Boolean).join(' · ') || '—'}</td>
+                    <td className="max-w-64 truncate px-3 py-2.5 text-ink-500">{c.how_met || '—'}</td>
+                    <td className="px-3 py-2.5 text-right text-xs tabular-nums text-ink-500">{fmtDate(c.last_touch)}</td>
                     <td className="px-3 py-2.5 text-right text-xs tabular-nums">
-                      <span className={n === null ? 'text-slate-600' : n < 0 ? 'text-rose-300' : n <= 2 ? 'text-amber-300' : 'text-slate-400'}>
+                      <span className={n === null ? 'text-ink-400' : n < 0 ? 'text-rose-600' : n <= 2 ? 'text-amber-600' : 'text-ink-500'}>
                         {fmtDate(c.next_touch)}
                       </span>
                     </td>

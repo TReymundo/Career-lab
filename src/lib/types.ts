@@ -8,23 +8,20 @@ export const TRACKS: { id: Track; label: string; short: string }[] = [
   { id: 'other', label: 'Other', short: 'Other' },
 ];
 
-export type Status =
-  | 'target' | 'networking' | 'applied' | 'screen'
-  | 'interview' | 'final' | 'offer' | 'rejected' | 'withdrawn';
+export type Status = 'saved' | 'tailored' | 'applied' | 'interviewing' | 'offer' | 'rejected';
 
-export const STATUSES: { id: Status; label: string; tone: string }[] = [
-  { id: 'target', label: 'Target', tone: 'slate' },
-  { id: 'networking', label: 'Networking', tone: 'violet' },
-  { id: 'applied', label: 'Applied', tone: 'sky' },
-  { id: 'screen', label: 'HR screen', tone: 'cyan' },
-  { id: 'interview', label: 'Interview', tone: 'amber' },
-  { id: 'final', label: 'Final / AC', tone: 'orange' },
-  { id: 'offer', label: 'Offer', tone: 'emerald' },
-  { id: 'rejected', label: 'Rejected', tone: 'rose' },
-  { id: 'withdrawn', label: 'Withdrawn', tone: 'slate' },
+/** The board reads left to right; `terminal` columns sit apart from the working flow. */
+export const STATUSES: { id: Status; label: string; es: string; tone: string; terminal?: boolean }[] = [
+  { id: 'saved', label: 'Saved', es: 'Guardado', tone: 'slate' },
+  { id: 'tailored', label: 'Tailored', es: 'Adaptado', tone: 'violet' },
+  { id: 'applied', label: 'Applied', es: 'Postulado', tone: 'sky' },
+  { id: 'interviewing', label: 'Interviewing', es: 'Entrevistas', tone: 'amber' },
+  { id: 'offer', label: 'Offer', es: 'Oferta', tone: 'emerald', terminal: true },
+  { id: 'rejected', label: 'Rejected', es: 'Rechazado', tone: 'rose', terminal: true },
 ];
 
-export const LIVE_STATUSES: Status[] = ['target', 'networking', 'applied', 'screen', 'interview', 'final', 'offer'];
+export const LIVE_STATUSES: Status[] = ['saved', 'tailored', 'applied', 'interviewing', 'offer'];
+export const statusMeta = (id: string) => STATUSES.find((s) => s.id === id) ?? STATUSES[0];
 
 export type Lang = 'en' | 'es';
 
@@ -68,8 +65,10 @@ export interface AppEvent {
   id: number; application_id: number; on_date: string; kind: string; note: string;
 }
 
+export type DocKind = 'cv' | 'cover' | 'outreach' | 'prep' | 'plan';
+
 export interface Doc {
-  id: number; application_id: number | null; kind: 'cv' | 'cover';
+  id: number; application_id: number | null; kind: DocKind;
   title: string; body: string; created_at: string;
 }
 

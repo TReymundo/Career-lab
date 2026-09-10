@@ -4,8 +4,13 @@ import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import { db, dbPath } from './db.ts';
 import { ATS, fetchAts, importDelimited, importLinkedInProfile, importPastedBlocks } from './jobs.ts';
+import { applyProposal, emailConfigured, scanMailbox, type Proposal } from './email.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+// Credentials live in .env and nowhere else — never in the database, never in the UI.
+try { process.loadEnvFile(resolve(root, '.env')); } catch { /* no .env yet, which is fine */ }
+
 const app = express();
 app.use(express.json({ limit: '2mb' }));
 
@@ -166,6 +171,28 @@ app.post('/api/import/linkedin-profile', (req, res) => {
   try {
     res.json(importLinkedInProfile(String(filename ?? ''), text));
   } catch (e) { res.status(400).json({ error: String(e) }); }
+});
+
+app.get('/api/email/status', (_req, res) => {
+  res.json({
+    configured: emailConfigured(),
+    user: process.env.IMAP_USER ?? '',
+    host: process.env.IMAP_HOST ?? '',
+  });
+});
+
+app.post('/api/email/scan', async (req, res) => {
+  try {
+    res.json({ proposals: await scanMailbox(Number(req.body?.days ?? 30), String(req.body?.mailbox ?? 'INBOX')) });
+  } catch (e) {
+    res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+app.post('/api/email/apply', (req, res) => {
+  const proposals = (req.body?.proposals ?? []) as Proposal[];
+  if (!Array.isArray(proposals) || !proposals.length) return res.status(400).json({ error: 'nothing to apply' });
+  res.json({ applied: proposals.map((p) => applyProposal(p)) });
 });
 
 /** Promote a job row into a tracked application, carrying the description across as the JD. */

@@ -55,7 +55,7 @@ function Identity({ profile, reload }: { profile: Profile; reload: () => Promise
   return (
     <Card className="p-5">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300">Identity</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-ink-700">Identity</h2>
         <Button
           variant="primary"
           disabled={!dirty}
@@ -80,8 +80,8 @@ function Identity({ profile, reload }: { profile: Profile; reload: () => Promise
               placeholder="Spanish (native), English (C1)" />
       </div>
 
-      <div className="mt-5 rounded-lg border border-ink-800 bg-ink-950/40 p-4">
-        <p className="mb-3 text-[11px] uppercase tracking-wider text-slate-400">
+      <div className="mt-5 rounded-lg border border-line bg-sunken p-4">
+        <p className="mb-3 text-[11px] uppercase tracking-wider text-ink-500">
           Versión en español — used whenever you generate a Spanish CV. Anything left blank falls back to the English text.
         </p>
         <div className="grid gap-3 md:grid-cols-3">
@@ -125,7 +125,7 @@ function ExperienceCard({ exp, reload }: { exp: Experience; reload: () => Promis
   return (
     <Card className="p-4">
       <div className="flex items-start gap-3">
-        <button onClick={() => setExpanded((v) => !v)} className="mt-0.5 text-slate-500 hover:text-slate-200">
+        <button onClick={() => setExpanded((v) => !v)} className="mt-0.5 text-ink-500 hover:text-ink-900">
           {expanded ? '▾' : '▸'}
         </button>
         <div className="min-w-0 flex-1">
@@ -149,14 +149,14 @@ function ExperienceCard({ exp, reload }: { exp: Experience; reload: () => Promis
 
               <div>
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-[11px] uppercase tracking-wider text-slate-400">
+                  <span className="text-[11px] uppercase tracking-wider text-ink-500">
                     Bullets — untagged ones appear on every CV; tagged ones only on that track’s version
                   </span>
                   <Button onClick={() => setBullets((bs) => [...bs, { text: '', tracks: [] }])}>+ Bullet</Button>
                 </div>
                 <div className="space-y-3">
                   {bullets.map((b, i) => (
-                    <div key={i} className="rounded-lg border border-ink-800 p-3">
+                    <div key={i} className="rounded-lg border border-line p-3">
                       <div className="grid gap-2 md:grid-cols-2">
                         <Area rows={2} value={b.text} onChange={(e) => setBullet(i, { text: e.target.value })}
                               placeholder="EN — Verb + what you did + the number. e.g. “Rebuilt the daily VaR exception report in SQL, cutting production time from 90 to 20 minutes.”" />
@@ -169,20 +169,20 @@ function ExperienceCard({ exp, reload }: { exp: Experience; reload: () => Promis
                           <button key={t.id} onClick={() => toggleTrack(i, t.id)}
                                   className={`rounded border px-1.5 py-0.5 text-[11px] transition ${
                                     b.tracks.includes(t.id)
-                                      ? 'border-accent/50 bg-accent/15 text-accent'
-                                      : 'border-ink-700 text-slate-500 hover:text-slate-300'}`}>
+                                      ? 'border-brand-400 bg-brand-100 text-brand-600'
+                                      : 'border-line text-ink-500 hover:text-ink-700'}`}>
                             {t.short}
                           </button>
                         ))}
-                        <span className="ml-auto text-[11px] text-slate-600">
+                        <span className="ml-auto text-[11px] text-ink-400">
                           {b.tracks.length === 0 ? 'all tracks' : `${b.tracks.length} track${b.tracks.length > 1 ? 's' : ''}`}
                         </span>
                         <button onClick={() => setBullets((bs) => bs.filter((_, j) => j !== i))}
-                                className="text-[11px] text-slate-600 hover:text-rose-300">remove</button>
+                                className="text-[11px] text-ink-400 hover:text-rose-600">remove</button>
                       </div>
                     </div>
                   ))}
-                  {bullets.length === 0 && <p className="text-sm text-slate-500">No bullets yet.</p>}
+                  {bullets.length === 0 && <p className="text-sm text-ink-500">No bullets yet.</p>}
                 </div>
               </div>
             </div>

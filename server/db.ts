@@ -127,3 +127,15 @@ const profileCols = new Set(
 for (const col of ['headline_es', 'summary_es', 'skills_es', 'languages_es']) {
   if (!profileCols.has(col)) db.exec(`ALTER TABLE profile ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`);
 }
+
+/**
+ * v2 pipeline: Saved → Tailored → Applied → Interviewing → Offer / Rejected.
+ * Old rows are mapped onto the new columns rather than dropped.
+ */
+const STATUS_MIGRATION: Record<string, string> = {
+  target: 'saved', networking: 'saved', screen: 'interviewing',
+  interview: 'interviewing', final: 'interviewing', withdrawn: 'rejected',
+};
+for (const [from, to] of Object.entries(STATUS_MIGRATION)) {
+  db.prepare('UPDATE application SET status = ? WHERE status = ?').run(to, from);
+}

@@ -51,15 +51,15 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
   const generate = async () => {
     if (!checked.size) return;
     setBusy(true);
-    let firstApp: number | null = null;
+    const ids: number[] = [];
     for (const id of checked) {
       const { application_id } = await api.promote(id, track);
-      firstApp ??= application_id;
+      ids.push(application_id);
     }
     await Promise.all([load(), reload()]);
     setBusy(false);
     setChecked(new Set());
-    if (firstApp) navigate(`/documents?app=${firstApp}&lang=${lang}&track=${track}`);
+    if (ids.length) navigate(`/documents?apps=${ids.join(',')}&lang=${lang}&track=${track}`);
   };
 
   const bulk = async (body: Partial<Job>) => {
@@ -82,7 +82,7 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
           className="min-w-72 flex-1"
         />
         <Button variant="primary" onClick={() => setApplied(q)}>Search</Button>
-        <Button onClick={() => setStarredOnly((v) => !v)} className={starredOnly ? 'text-accent' : ''}>
+        <Button onClick={() => setStarredOnly((v) => !v)} className={starredOnly ? 'text-brand-600' : ''}>
           {starredOnly ? '★ Starred' : '☆ All'}
         </Button>
         <Button onClick={() => setShowDismissed((v) => !v)}>{showDismissed ? 'Hiding none' : 'Hide dismissed'}</Button>
@@ -93,8 +93,8 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
 
       <SavedSearches store={store} reload={reload} current={q} apply={(t) => { setQ(t); setApplied(t); }} />
 
-      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-ink-800 bg-ink-900/70 px-4 py-2.5 text-sm">
-        <span className="text-slate-400">
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-4 py-2.5 text-sm">
+        <span className="text-ink-500">
           {checked.size ? `${checked.size} selected` : `${scored.length} shown of ${total}`}
         </span>
         <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -121,14 +121,14 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
       ) : (
         <Card className="overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-ink-850 text-[11px] uppercase tracking-wider text-slate-400">
+            <thead className="bg-sunken text-[11px] uppercase tracking-wider text-ink-500">
               <tr>
                 <th className="w-8 px-3 py-2">
                   <input
                     type="checkbox"
                     checked={checked.size > 0 && checked.size === scored.length}
                     onChange={(e) => setChecked(e.target.checked ? new Set(scored.map((j) => j.id)) : new Set())}
-                    className="accent-amber-500"
+                    className="accent-brand-600"
                   />
                 </th>
                 <th className="px-3 py-2 text-left font-medium">Role</th>
@@ -139,33 +139,33 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
                 <th className="px-3 py-2 text-right font-medium">Posted</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-ink-800">
+            <tbody className="divide-y divide-line">
               {scored.map((j) => (
-                <tr key={j.id} className={`hover:bg-ink-850/60 ${checked.has(j.id) ? 'bg-ink-850/80' : ''} ${j.dismissed ? 'opacity-45' : ''}`}>
+                <tr key={j.id} className={`hover:bg-brand-50 ${checked.has(j.id) ? 'bg-brand-50' : ''} ${j.dismissed ? 'opacity-45' : ''}`}>
                   <td className="px-3 py-2.5">
-                    <input type="checkbox" checked={checked.has(j.id)} onChange={() => toggle(j.id)} className="accent-amber-500" />
+                    <input type="checkbox" checked={checked.has(j.id)} onChange={() => toggle(j.id)} className="accent-brand-600" />
                   </td>
                   <td className="max-w-80 px-3 py-2.5">
                     <div className="flex items-center gap-2">
                       <button onClick={() => patchJob(j.id, { starred: j.starred ? 0 : 1 })}
-                              className={j.starred ? 'text-accent' : 'text-slate-600 hover:text-accent'}>
+                              className={j.starred ? 'text-brand-600' : 'text-ink-400 hover:text-brand-600'}>
                         {j.starred ? '★' : '☆'}
                       </button>
                       {j.url
-                        ? <a href={j.url} target="_blank" rel="noreferrer" className="truncate font-medium text-slate-100 hover:text-accent hover:underline">{j.title || '—'}</a>
-                        : <span className="truncate font-medium text-slate-100">{j.title || '—'}</span>}
+                        ? <a href={j.url} target="_blank" rel="noreferrer" className="truncate font-medium text-ink-900 hover:text-brand-600 hover:underline">{j.title || '—'}</a>
+                        : <span className="truncate font-medium text-ink-900">{j.title || '—'}</span>}
                     </div>
-                    {j.application_id && <span className="ml-6 text-[11px] text-emerald-300">in pipeline</span>}
+                    {j.application_id && <span className="ml-6 text-[11px] text-emerald-600">in pipeline</span>}
                   </td>
-                  <td className="px-3 py-2.5 text-slate-300">{j.company || '—'}</td>
-                  <td className="max-w-48 truncate px-3 py-2.5 text-slate-500">{j.location || '—'}</td>
+                  <td className="px-3 py-2.5 text-ink-700">{j.company || '—'}</td>
+                  <td className="max-w-48 truncate px-3 py-2.5 text-ink-500">{j.location || '—'}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">
-                    <span className={j.score >= 25 ? 'text-emerald-300' : j.score >= 15 ? 'text-amber-300' : 'text-slate-500'}>
+                    <span className={j.score >= 25 ? 'text-emerald-600' : j.score >= 15 ? 'text-amber-600' : 'text-ink-500'}>
                       {j.score}%
                     </span>
                   </td>
                   <td className="px-3 py-2.5"><Badge tone={SOURCE_TONE[j.source] ?? 'slate'}>{j.source}</Badge></td>
-                  <td className="px-3 py-2.5 text-right text-xs tabular-nums text-slate-500">{j.posted_on ? fmtDate(j.posted_on) : '—'}</td>
+                  <td className="px-3 py-2.5 text-right text-xs tabular-nums text-ink-500">{j.posted_on ? fmtDate(j.posted_on) : '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -173,7 +173,7 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
         </Card>
       )}
 
-      <p className="text-xs text-slate-600">
+      <p className="text-xs text-ink-400">
         Match % is the share of a posting’s distinctive words that already appear somewhere in your master CV.
         It ranks a long list; it does not judge a single job. A 12% match on a desk you want beats a 40% match on one you don’t.
       </p>
@@ -190,20 +190,20 @@ function SavedSearches({ store, reload, current, apply }:
     <div className="flex flex-wrap items-center gap-2">
       {saved.map((s) => (
         <button key={s.id} onClick={() => apply(s.terms)}
-                className="group rounded-full border border-ink-700 px-3 py-1 text-xs text-slate-300 hover:border-accent/50 hover:text-accent">
+                className="group rounded-full border border-line px-3 py-1 text-xs text-ink-700 hover:border-brand-400 hover:text-brand-600">
           {s.name}
           <span onClick={async (e) => { e.stopPropagation(); await api.remove('saved_search', s.id); await reload(); }}
-                className="ml-2 text-slate-600 group-hover:text-rose-300">×</span>
+                className="ml-2 text-ink-400 group-hover:text-rose-600">×</span>
         </button>
       ))}
       {current.trim() && (
         <div className="flex items-center gap-1">
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="save this search as…"
-                 className="w-40 rounded-full border border-dashed border-ink-700 bg-transparent px-3 py-1 text-xs outline-none placeholder:text-slate-600 focus:border-accent/50" />
+                 className="w-40 rounded-full border border-dashed border-line bg-transparent px-3 py-1 text-xs outline-none placeholder:text-ink-400 focus:border-brand-400" />
           <button
             disabled={!name.trim()}
             onClick={async () => { await api.create('saved_search', { name: name.trim(), terms: current }); setName(''); await reload(); }}
-            className="text-xs text-accent disabled:opacity-30"
+            className="text-xs text-brand-600 disabled:opacity-30"
           >
             save
           </button>
@@ -248,7 +248,7 @@ function ImportPanel({ onDone }: { onDone: () => Promise<void> }) {
       <div className="mb-4 flex flex-wrap gap-1">
         {TABS.map((t) => (
           <button key={t.id} onClick={() => { setTab(t.id); setMsg(''); }}
-                  className={`rounded-md px-3 py-1.5 text-sm transition ${tab === t.id ? 'bg-ink-800 text-slate-100' : 'text-slate-400 hover:text-slate-200'}`}>
+                  className={`rounded-md px-3 py-1.5 text-sm transition ${tab === t.id ? 'bg-sunken text-ink-900' : 'text-ink-500 hover:text-ink-900'}`}>
             {t.label}
           </button>
         ))}
@@ -256,13 +256,13 @@ function ImportPanel({ onDone }: { onDone: () => Promise<void> }) {
 
       {tab === 'file' && (
         <div className="space-y-3">
-          <p className="text-sm text-slate-400">
-            On LinkedIn: <span className="text-slate-200">Settings → Data privacy → Get a copy of your data</span>.
-            The archive contains <code className="text-accent">Saved Jobs.csv</code> and <code className="text-accent">Job Applications.csv</code>.
+          <p className="text-sm text-ink-500">
+            On LinkedIn: <span className="text-ink-900">Settings → Data privacy → Get a copy of your data</span>.
+            The archive contains <code className="text-brand-600">Saved Jobs.csv</code> and <code className="text-brand-600">Job Applications.csv</code>.
             Drop either here — columns are matched by name, so the order does not matter.
           </p>
           <input type="file" accept=".csv,.tsv,.txt" onChange={(e) => readFile(e.target.files?.[0])}
-                 className="block w-full text-sm text-slate-400 file:mr-3 file:rounded-md file:border-0 file:bg-ink-800 file:px-3 file:py-1.5 file:text-slate-200" />
+                 className="block w-full text-sm text-ink-500 file:mr-3 file:rounded-md file:border-0 file:bg-sunken file:px-3 file:py-1.5 file:text-ink-900" />
           <Area rows={5} value={text} onChange={(e) => setText(e.target.value)} placeholder="…or paste the CSV contents here" className="font-mono text-xs" />
           <Button variant="primary" disabled={busy || !text.trim()} onClick={() => run(async () => {
             const r = await api.importJobs(text, 'table', 'linkedin-export');
@@ -273,7 +273,7 @@ function ImportPanel({ onDone }: { onDone: () => Promise<void> }) {
 
       {tab === 'paste' && (
         <div className="space-y-3">
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-ink-500">
             Select a search results page, copy, paste. One job per block, blank line between blocks:
             title, then company, then location, and any URL on its own line. Rough on purpose — fix the rows afterwards.
           </p>
@@ -288,10 +288,10 @@ function ImportPanel({ onDone }: { onDone: () => Promise<void> }) {
 
       {tab === 'ats' && (
         <div className="space-y-3">
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-ink-500">
             Pulls a company’s live openings from the public job-board API its own careers page uses.
-            The slug is the company name in its careers URL — <code className="text-accent">boards.greenhouse.io/<b>stripe</b></code>,
-            <code className="text-accent"> jobs.lever.co/<b>palantir</b></code>. Most large banks run their own systems,
+            The slug is the company name in its careers URL — <code className="text-brand-600">boards.greenhouse.io/<b>stripe</b></code>,
+            <code className="text-brand-600"> jobs.lever.co/<b>palantir</b></code>. Most large banks run their own systems,
             so expect this to work for tech, fintech and startups rather than J.P. Morgan.
           </p>
           <div className="flex flex-wrap gap-2">
@@ -311,14 +311,14 @@ function ImportPanel({ onDone }: { onDone: () => Promise<void> }) {
 
       {tab === 'profile' && (
         <div className="space-y-3">
-          <p className="text-sm text-slate-400">
-            From the same LinkedIn archive, drop <code className="text-accent">Positions.csv</code>,
-            <code className="text-accent"> Education.csv</code>, <code className="text-accent">Skills.csv</code> or
-            <code className="text-accent"> Languages.csv</code> to fill the Master CV. Each position’s description becomes
+          <p className="text-sm text-ink-500">
+            From the same LinkedIn archive, drop <code className="text-brand-600">Positions.csv</code>,
+            <code className="text-brand-600"> Education.csv</code>, <code className="text-brand-600">Skills.csv</code> or
+            <code className="text-brand-600"> Languages.csv</code> to fill the Master CV. Each position’s description becomes
             bullets you then tag by track — so you type your history once and aim it many times.
           </p>
           <input type="file" accept=".csv" onChange={(e) => readFile(e.target.files?.[0])}
-                 className="block w-full text-sm text-slate-400 file:mr-3 file:rounded-md file:border-0 file:bg-ink-800 file:px-3 file:py-1.5 file:text-slate-200" />
+                 className="block w-full text-sm text-ink-500 file:mr-3 file:rounded-md file:border-0 file:bg-sunken file:px-3 file:py-1.5 file:text-ink-900" />
           <div className="flex gap-2">
             <Field value={filename} onChange={(e) => setFilename(e.target.value)} placeholder="filename (e.g. Positions.csv)" className="w-64" />
             <Button variant="primary" disabled={busy || !text.trim() || !filename} onClick={() => run(async () => {
@@ -330,7 +330,7 @@ function ImportPanel({ onDone }: { onDone: () => Promise<void> }) {
         </div>
       )}
 
-      {msg && <p className="mt-3 rounded-md border border-ink-700 bg-ink-950/60 px-3 py-2 text-sm text-slate-300">{msg}</p>}
+      {msg && <p className="mt-3 rounded-md border border-line bg-sunken px-3 py-2 text-sm text-ink-700">{msg}</p>}
     </Card>
   );
 }
