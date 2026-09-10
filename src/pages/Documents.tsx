@@ -58,7 +58,7 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
   const [kind, setKind] = useState<DocKind>('cv');
   const [lang, setLang] = useState<Lang>((params.get('lang') as Lang) ?? 'en');
   const [template, setTemplate] = useState<TemplateId>('ats');
-  const [track, setTrack] = useState<Track>((params.get('track') as Track) ?? 'markets');
+  const [track, setTrack] = useState<Track>((params.get('track') as Track) ?? 'finance');
   const [hook, setHook] = useState('');
   const [proof, setProof] = useState('');
   const [contact, setContact] = useState('');

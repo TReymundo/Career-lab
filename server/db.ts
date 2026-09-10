@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS application (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   company TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT '',
-  track TEXT NOT NULL DEFAULT 'markets',      -- markets | ib | consulting | product | other
+  track TEXT NOT NULL DEFAULT 'finance',      -- finance | ib | consulting | data | tech | product | other
   location TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'target',      -- target|networking|applied|screen|interview|final|offer|rejected|withdrawn
   priority INTEGER NOT NULL DEFAULT 2,        -- 1 high, 2 medium, 3 low
@@ -160,3 +160,7 @@ CREATE TABLE IF NOT EXISTS setting (
   value TEXT NOT NULL DEFAULT ''
 );
 `);
+
+/** v3: tracks widened beyond finance-only. Old rows keep their meaning. */
+db.prepare("UPDATE application SET track = 'finance' WHERE track = 'markets'").run();
+db.prepare("UPDATE job SET track = 'finance' WHERE track = 'markets'").run();

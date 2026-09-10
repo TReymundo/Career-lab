@@ -9,7 +9,7 @@
     "dev:web": "vite",
     "build": "tsc -b --noCheck && vite build",
     "start": "cross-env NODE_ENV=production API_PORT=5274 tsx server/index.ts",
-    "seed": "tsx server/seed.ts"
+    "reset": "tsx server/reset.ts"
   },
   "dependencies": {
     "docx": "^9.7.1",

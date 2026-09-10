@@ -44,7 +44,7 @@ export default function Pipeline({ store, reload }: { store: Store; reload: () =
 
   const add = async () => {
     const created = await api.create<Application>('application', {
-      company: 'New target', role: '', track: (trackFilter === 'all' ? 'markets' : trackFilter) as Track, status: 'saved',
+      company: 'New target', role: '', track: (trackFilter === 'all' ? 'finance' : trackFilter) as Track, status: 'saved',
     });
     await reload();
     setOpenId(created.id);

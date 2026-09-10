@@ -100,8 +100,8 @@ export const QUESTIONS: StandardQuestion[] = [
     limit: 250,
     perFirm: false,
     coach: {
-      en: 'Your daily reporting cut-off is a genuine answer here. Say what you did to protect the deadline, not just that you met it.',
-      es: 'Tu corte diario de reporting es una respuesta válida acá. Contá qué hiciste para proteger la fecha, no sólo que la cumpliste.',
+      en: 'An exam week, a launch, a shift, a deadline at work — all fine. Say what you did to protect the deadline, not just that you met it.',
+      es: 'Una semana de finales, un lanzamiento, un turno, una entrega en el trabajo — todo sirve. Contá qué hiciste para proteger la fecha, no sólo que la cumpliste.',
     },
   },
   {
@@ -121,7 +121,7 @@ export const QUESTIONS: StandardQuestion[] = [
     es: '¿Qué mercado o empresa seguís, y cuál es tu visión?',
     limit: 300,
     perFirm: false,
-    tracks: ['markets', 'ib'],
+    tracks: ['finance', 'ib'],
     coach: {
       en: 'Have a position, not a summary. Name the level, what moved it, what you think happens next, and what would prove you wrong.',
       es: 'Tené una posición, no un resumen. Nombrá el nivel, qué lo movió, qué creés que pasa después, y qué te probaría equivocado.',
@@ -134,8 +134,8 @@ export const QUESTIONS: StandardQuestion[] = [
     limit: 400,
     perFirm: true,
     coach: {
-      en: 'Use it for the thing your CV cannot show: the reason you are moving from risk reporting to the front office, in your own words.',
-      es: 'Usalo para lo que el CV no puede mostrar: por qué pasás de reporting de riesgos al front office, en tus palabras.',
+      en: 'Use it for the thing your CV cannot show: why you want this kind of work, in your own words, especially if your background points somewhere else.',
+      es: 'Usalo para lo que el CV no puede mostrar: por qué querés este tipo de trabajo, en tus palabras, sobre todo si tu perfil apunta a otro lado.',
     },
   },
 ];

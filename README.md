@@ -1,20 +1,11 @@
 # Career Lab
 
-A local job-search workbench: an application pipeline, a contact network, one master CV
-you edit once, and a generator that produces track-specific CVs and cover letters from it.
+A local job-search workbench: build a CV, find jobs, generate tailored documents, and track
+every application — all on your own machine, in one SQLite file that never leaves it.
 
-Built around one idea: you keep **one** set of facts about yourself, tag each CV bullet with
-the tracks it sells (Markets / IB / Consulting / Product), and the app assembles the right
-document per application instead of you maintaining five diverging Word files.
-
-## New here? Open **Start here**
-
-The first screen in the sidebar is a fourteen-step guided path. Each step says what to do, why
-it matters and roughly how long it takes, does the work inline where it can, and ticks itself
-off from your actual data. It assumes nothing: step one imports a CV you already have, or
-accepts that you have none and builds one from scratch — including a bullet writer for people
-who think they have no experience yet (coursework, clubs, tutoring, sport and a family business
-all count, and it shows you how to write each one so a recruiter reads it that way).
+It assumes nothing about you. No particular university, country, field or amount of
+experience. If you have never had a job, the guided path builds your first CV from what you
+*have* done.
 
 ## Running it
 
@@ -23,192 +14,136 @@ npm install
 npm run dev
 ```
 
-Then open http://localhost:5273. The API runs on 5274 and the web app proxies `/api` to it.
+Then open http://localhost:5273 and follow **Start here**. That is the whole instruction.
 
-To load the starting skeleton (your profile shell, the JPM internship, ITBA, and a few
-target rows), run once on an empty database:
+`npm run reset` empties everything if you want to begin again from scratch.
 
-```bash
-npm run seed
-```
+## Start here — the guided path
 
-Everything lives in `data/career-lab.db` — a single SQLite file. Back it up by copying it.
-It is gitignored, so the database never leaves your machine.
+Fourteen steps in six phases. Each one says what to do in a sentence, does the work inline,
+and crosses itself off when you save, opening the next one automatically. The sidebar starts
+with a single item and reveals sections only as you reach them, so you are never looking at a
+screen of tabs you have no use for yet.
 
-## The six screens
+| Phase | What happens |
+| --- | --- |
+| **1 · Who you are** | Name, contact details, and what kind of work you are going for. |
+| **2 · Build your CV** | Upload a CV you already have, or build one from nothing — then make sure every line has a number in it. |
+| **3 · Sharpen it with AI** | Optional. With your own Google API key: rewrite your bullets, write your profile paragraph, review the whole CV. |
+| **4 · Find jobs** | Buttons that take you to LinkedIn to search and to request your data export, then bring the results in. |
+| **5 · Apply** | Generate a tailored document pack for a job, and write the answers forms keep asking for. |
+| **6 · Keep track** | Move applications across the board, and take a backup. |
+
+### If you have no experience
+
+Step "Your experience" opens with the list of things that count on a first CV: any job at all,
+a school or university project, a club or team role, tutoring, a family business, sport,
+volunteering, a side project. Then a builder turns one into a proper line — **doing word →
+what → how big → what came of it** — assembling the sentence as you type.
+
+### If you already have a CV
+
+Upload a `.docx`, or paste the text. It reads your name, email, phone, LinkedIn, and every job
+and education entry with its dates and bullets, in English or Spanish. It shows you what it
+found and writes nothing until you confirm. (For a PDF: open it, select all, copy, paste.)
+
+## The AI step
+
+Optional and entirely under your control. Create a free key at
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey), paste it into the AI step,
+and three things become available: rewriting bullets, writing your profile paragraph, and an
+honest review of your CV against the kind of role you picked.
+
+The model is instructed never to invent a fact, a number, an employer or a date. When a bullet
+has no measurable result it leaves a bracketed question asking *you* for the figure rather than
+making one up. Nothing is ever sent in the background — every call happens because you pressed
+a button, and only the text you are working on goes with it.
+
+Your key is stored on this machine only: in the local database, or in a `.env` file as
+`GOOGLE_API_KEY` if you would rather keep it out of the database entirely. Google bills your
+own account for what you use.
+
+## The screens, once they unlock
 
 | Screen | What it is for |
 | --- | --- |
-| **Dashboard** | Applications per week, response rate, funnel, top keywords, and what is due. |
-| **Jobs** | The long list of openings: keyword search, match scores, checkboxes, and one button from checked jobs to a full document pack. |
-| **Pipeline** | Kanban board and list: `Saved → Tailored → Applied → Interviewing → Offer / Rejected`, drag to move, bulk actions, activity log. |
-| **Network** | Every person you speak to, with a follow-up date. Referrals move these processes more than applications do. |
-| **Master CV** | Your identity block and every experience entry, bilingual, with bullets tagged per track. |
-| **Documents** | Six artifacts per application: CV, cover letter, outreach DM, interview prep sheet, tailoring plan, interview debrief — exported as DOCX or PDF. |
-| **Answer bank** | The eleven questions application forms actually ask, written once and reused, with word limits and coaching notes. |
-| **Inbox sync** | Scans recruiter email over IMAP in English and Spanish and *proposes* status moves. |
+| **My CV** | Your history, written once, bilingual, with each line taggable by the kind of role it sells. |
+| **Jobs** | Import from LinkedIn or a public job board, search with a real query grammar, rank by match, generate from checked rows. |
+| **Documents** | CV, cover letter, cold outreach message, interview prep sheet, tailoring plan, interview debrief — exported as DOCX or PDF. |
+| **Pipeline** | A drag-and-drop board: Saved → Tailored → Applied → Interviewing → Offer / Rejected. |
+| **Answer bank** | The eleven questions application forms keep asking, with word limits and coaching notes. |
+| **Network** | People you speak to, and when to come back to them. |
+| **Dashboard** | Applications per week, response rate, funnel, and what is due. |
+| **Inbox sync** | Scans recruiter email over IMAP in English and Spanish and *proposes* status changes. |
 
-The sidebar's **Start here** sits above all of these and walks you through them in order.
+## Getting jobs in
 
-## Getting jobs in — and why not straight from LinkedIn
+LinkedIn has no public jobs API, and scraping it breaks their terms. So this pulls from
+LinkedIn the ways LinkedIn allows, plus sources that publish openings openly:
 
-LinkedIn has no public jobs API, and scraping the site breaks its terms of use and its
-anti-bot defences. So this pulls from LinkedIn the ways LinkedIn actually allows, plus
-sources that publish openings openly. All four live under **Jobs → Import jobs**:
+- **LinkedIn export** — Settings → Data privacy → *Get a copy of your data*, then import
+  `Saved Jobs.csv` or `Job Applications.csv`. Columns are matched by name.
+- **Paste a results page** — copy a search results page and paste it. Works immediately.
+- **Public job boards** — live openings from a company's Greenhouse, Lever or Ashby board.
+- **Master CV import** — `Positions.csv`, `Education.csv`, `Skills.csv` from the same archive.
 
-| Route | What it gives you |
-| --- | --- |
-| **LinkedIn export (CSV)** | Settings → Data privacy → *Get a copy of your data*. The archive has `Saved Jobs.csv` and `Job Applications.csv`. Columns are matched by name, so order does not matter. |
-| **Paste a results page** | Select a search results page, copy, paste. Blank line between jobs; title, company, location, URL. Rough on purpose. |
-| **Company job board** | Live openings straight from a company's public Greenhouse / Lever / Ashby board — the same API its own careers page calls. Works for tech, fintech and startups; large banks run their own systems. |
-| **Fill Master CV from LinkedIn** | `Positions.csv`, `Education.csv`, `Skills.csv`, `Languages.csv` from the same archive, straight into the Master CV. Each position's description becomes bullets you then tag by track. |
+Search supports `AND` terms, `"quoted phrases"` and `-exclusions`:
+`analyst "buenos aires" -senior`. Save a search and it becomes a chip you can click again.
 
-So the loop is: save jobs on LinkedIn as you browse → export once → import → search, filter
-and rank them here → check the ones worth it → generate.
+## Two languages
 
-### Searching the list
+Every document generates in English or Spanish, in one of three templates (ATS-safe, banking,
+consulting). Headings and dates are written for each language rather than translated. Your own
+content is bilingual by field: a Spanish block on your CV and an ES box beside every bullet.
+Anything left blank falls back to English, and the Spanish CV tells you exactly which lines are
+still untranslated instead of silently mixing the two.
 
-The search box ANDs its terms, keeps `"quoted phrases"` together, and drops anything
-matching a `-excluded` word. `sales trading "buenos aires" -senior` does what it looks like.
-Name a search and it becomes a chip you can click again.
+## Exporting
 
-**Match %** is the share of a posting's distinctive words that already appear somewhere in
-your master CV. It ranks a long list; it does not judge a single job. A 12% match on a desk
-you want beats a 40% match on one you don't.
-
-### From a checked job to a CV
-
-Tick the jobs, pick a track and a language, press **Generate CV**. Each checked job becomes
-a tracked application carrying its description across as the job description, and the first
-one opens in the generator with the track, language and posting already loaded.
-
-## Spanish, and the three templates
-
-Every document generates in **English or Spanish**, in one of three templates:
-
-- **Clásico / apto ATS** — one column, nothing a parser can mangle. For online forms.
-- **Banca y Mercados** — education first, dense, one page.
-- **Consultoría** — education and results first, leadership given its own weight.
-
-Section headings, dates (*Actualidad* rather than *Present*) and the whole cover-letter
-argument are written for each language rather than translated word for word.
-
-Your own content is bilingual by field: the Master CV has a **Versión en español** block for
-the headline, profile, skills and languages, and every bullet has an **ES** box beside the
-English one. Anything left blank falls back to the English text, and the Spanish CV tells you
-exactly which bullets are still untranslated rather than silently mixing languages.
-
-## The pipeline
-
-The board runs `Saved → Tailored → Applied → Interviewing → Offer / Rejected`. Drag a card
-between columns, or change status inline in list view; either way the move is written to that
-application's activity log, and dropping into **Applied** stamps today's date if there isn't
-one. Tick several cards and the bulk bar moves them all at once.
-
-## Documents: five artifacts per application
-
-Everything the generator produces is **deterministic** — it reads the posting and your master
-CV and rearranges what is already there. It never invents an achievement, because a bullet you
-cannot defend in an interview is worse than a missing one. Where judgement is needed the output
-asks you a question instead of guessing.
-
-| Artifact | What it is |
-| --- | --- |
-| **CV** | Track-filtered, in one of three templates, EN or ES. |
-| **Cover letter** | Track-specific argument, your hook and proof story slotted in. |
-| **Cold outreach DM** | Three sentences. Any longer and a recruiter stops reading on a phone. |
-| **Interview prep sheet** | Technical questions drawn from this posting's own vocabulary, STAR behaviourals, your stories pulled from the master CV, five questions to ask them, and a research checklist. |
-| **Tailoring plan** | Which of your bullets already speak the posting's language, which ATS keywords are missing, and the closest bullet each missing one belongs in. |
-
-**Generate full pack** writes all five at once and moves the application to Tailored. Coming
-from Jobs with several checked, the batch bar steps through them or generates every pack in one go.
-
-The prep sheet does **not** fetch company news — nothing in this app calls a news API. It gives
-you the four searches worth running and what to write down from each, with the links.
+**DOCX** for application forms — most parsers read Word more reliably than PDF. **PDF** for
+anything you email. Files are named `Surname_Name_CV_Company_EN.docx`, with accents
+transliterated because filenames travel through systems that mangle them.
 
 ## Inbox sync
 
 Point it at a mailbox over IMAP and it matches recruiter emails to companies in your pipeline,
-classifies them in English and Spanish, and **proposes** status changes for you to accept or
-reject. It never applies them on its own: silently marking a live process rejected because an
-automated acknowledgement used the wrong phrase is exactly the failure worth avoiding. Statuses
-only ever move forward, and every applied change writes an entry in the activity log.
+reads them in English and Spanish, and **proposes** status changes for you to accept or reject.
+It never applies them on its own. Statuses only move forward, and every applied change writes
+an entry in the activity log. `Gracias por postularte` is treated as an acknowledgement, not a
+rejection.
 
-`Gracias por postularte` is treated as an acknowledgement, not a rejection — it only ever moves
-a row to Applied.
-
-**Credentials never touch the app.** There is no password field in the interface and nothing is
-stored in the database. Copy `.env.example` to `.env` and fill it in; only the API process on
-your machine reads it. For Gmail use an app password (Google Account → Security → 2-Step
-Verification → App passwords), never your account password.
-
-## Exporting real files
-
-Nothing accepts Markdown. Every document exports as **DOCX** (use this for application forms —
-most parsers read Word more reliably than PDF) and **PDF** (for anything you email or hand over),
-named the way a recruiter's download folder should look: `Perez_Tomas_CV_JPMorgan_EN.docx`.
-Accents are transliterated, because filenames travel through systems that mangle them.
-
-## The answer bank
-
-Forms, not CVs, are where the hours go. The bank holds the eleven questions that recur across
-graduate applications — why this firm, why this division, leadership, failure, achievement,
-conflict, pressure, strengths and weaknesses, a market view, an open motivation statement —
-each with its typical word limit, a live word counter that turns red when you go over, and a
-coaching note on what a good answer does.
-
-Answers with no company attached are your reusable masters. Pick a company and you write a
-variant only where the question genuinely demands one; anything you leave blank there falls
-back to the master.
+Credentials never touch the interface: copy `.env.example` to `.env` and fill it in. For Gmail
+use an app password, never your account password.
 
 ## Backup
 
-**Start here → Take a backup** downloads every table as one JSON file, and restores from one.
-Everything otherwise lives in a single SQLite file on a single laptop, which is fine right up
-until it isn't.
-
-## How the track tagging works
-
-On **Master CV**, each bullet has track chips. A bullet with **no** chips appears on every
-version. A bullet tagged `S&T` only appears when you generate a Markets CV. So the same
-J.P. Morgan role can say "worked daily with rates exposures, P&L attribution and the moves
-behind them" on a trading application and "rebuilt the process after mapping the workflow
-with N stakeholders" on a consulting one — both true, differently aimed.
-
-## The two checks on generated documents
-
-- **Unfilled placeholders** — anything still in `[brackets]`. The seed deliberately plants
-  these so you cannot send a document with a hole in it by accident.
-- **Words in the posting your draft never uses** — a rough gap check against the job
-  description you pasted on the application. Cover the ones that are genuinely true of you;
-  a keyword you cannot defend in an interview is worse than a missing one.
-
-`Print / PDF` prints just the document, on A4, without the app chrome around it.
+**Start here → Back it up** downloads every table as one JSON file, and restores from one.
+Everything otherwise lives in a single file on a single laptop.
 
 ## Layout
 
 ```
 server/
-  db.ts        schema + SQLite connection (node:sqlite, no native deps) + migrations
-  index.ts     REST API — generic CRUD over a whitelist of tables, job search, import, email
-  jobs.ts      CSV/TSV parsing, LinkedIn archive import, public ATS board fetching
-  email.ts     IMAP scanning, EN/ES recruiter-email rules, proposal application
-  export.ts    Markdown → DOCX and PDF, plus recruiter-friendly file naming
-  cvimport.ts  reads an existing CV (.docx / text) into the Master CV
-  seed.ts      one-time starting skeleton
+  db.ts        schema, SQLite connection (node:sqlite, no native deps), migrations
+  index.ts     REST API — CRUD, job search, import, export, AI, email
+  jobs.ts      CSV/TSV parsing, LinkedIn archive import, public job-board fetching
+  cvimport.ts  reads an existing CV (.docx / text) into your CV
+  export.ts    Markdown → DOCX and PDF, plus file naming
+  ai.ts        optional Google Gemini calls, with strict no-inventing rules
+  email.ts     IMAP scanning and EN/ES recruiter-email rules
+  reset.ts     empties everything
 src/
   lib/types.ts      shared types, tracks, statuses
   lib/api.ts        fetch client + the single store hook
   lib/templates.ts  the CV / cover-letter engine, templates, EN/ES copy, match scoring
-  lib/tailor.ts     tailoring plan, cold outreach, interview prep and debrief generation
-  lib/questions.ts  the standard application-form questions, limits and coaching notes
-  pages/            Start, Dashboard, Jobs, Pipeline, Contacts, Profile, Documents, Answers, Inbox
-  components/ui.tsx the component kit, drawer, and the two chart shapes
+  lib/tailor.ts     tailoring plan, outreach, interview prep and debrief
+  lib/questions.ts  the standard application-form questions
+  pages/            Start, Profile, Jobs, Documents, Pipeline, Answers, Contacts, Dashboard, Inbox
+  components/ui.tsx the component kit, drawer, charts
 ```
 
-Tables: `job` (the openings list), `profile` + `experience` (the master CV), `application`,
-`contact`, `document` (every generated artifact, `kind` = cv/cover/outreach/prep/plan),
-`event` (the activity log), `saved_search`, `answer` (the answer bank), `setting` (guided-path state). CV templates live in code, in
-`src/lib/templates.ts`, rather than in a table — they are layout logic, not data.
+Tables: `job`, `profile` + `experience` (your CV), `application`, `contact`, `document`,
+`event` (the activity log), `saved_search`, `answer`, `setting`. CV templates live in code
+rather than in a table — they are layout logic, not data.
 
-The API takes `API_PORT` (not `PORT` — dev runners inject that for the web server).
+The API reads `API_PORT` (not `PORT` — dev runners inject that for the web server).

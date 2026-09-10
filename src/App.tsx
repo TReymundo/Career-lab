@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { daysUntil, useStore } from './lib/api.ts';
-import { LIVE_STATUSES } from './lib/types.ts';
+import { useStore } from './lib/api.ts';
+import { parseBullets, type Store } from './lib/types.ts';
 import Start from './pages/Start.tsx';
 import Dashboard from './pages/Dashboard.tsx';
 import Jobs from './pages/Jobs.tsx';
@@ -11,34 +12,39 @@ import Documents from './pages/Documents.tsx';
 import Answers from './pages/Answers.tsx';
 import Inbox from './pages/Inbox.tsx';
 
+/**
+ * The sidebar only shows what you have reached. Everything else stays out of the way until
+ * it would mean something — a first screen full of unexplained tabs is how people bounce.
+ */
 const NAV = [
-  { to: '/start', label: 'Start here', icon: '◎', hint: 'The guided path, step by step' },
-  { to: '/dashboard', label: 'Dashboard', icon: '◱', hint: 'Metrics and what is due' },
-  { to: '/jobs', label: 'Jobs', icon: '⌕', hint: 'Import, search, rank, generate' },
-  { to: '/pipeline', label: 'Pipeline', icon: '▤', hint: 'Kanban and list' },
-  { to: '/contacts', label: 'Network', icon: '⚇', hint: 'People and follow-ups' },
-  { to: '/profile', label: 'Master CV', icon: '✎', hint: 'Bilingual source of truth' },
-  { to: '/documents', label: 'Documents', icon: '❐', hint: 'CV, letters, outreach, prep' },
-  { to: '/answers', label: 'Answer bank', icon: '✍', hint: 'Reusable application-form answers' },
-  { to: '/inbox', label: 'Inbox sync', icon: '✉', hint: 'Recruiter email scanning' },
+  { to: '/start', label: 'Start here', icon: '◎', sub: 'The guided path', unlock: () => true },
+  { to: '/profile', label: 'My CV', icon: '✎', sub: 'Everything about you', unlock: (s: Store) => s.experience.length > 0 },
+  { to: '/jobs', label: 'Jobs', icon: '⌕', sub: 'Import, search, rank', unlock: (s: Store) => s.experience.some((e) => parseBullets(e.bullets).length > 0) },
+  { to: '/documents', label: 'Documents', icon: '❐', sub: 'CV, letters, prep', unlock: (s: Store) => s.application.length > 0 },
+  { to: '/pipeline', label: 'Pipeline', icon: '▤', sub: 'Track applications', unlock: (s: Store) => s.application.length > 0 },
+  { to: '/answers', label: 'Answer bank', icon: '✍', sub: 'Form answers', unlock: (s: Store) => s.document.length > 0 },
+  { to: '/contacts', label: 'Network', icon: '⚇', sub: 'People to follow up', unlock: (s: Store) => s.application.length > 0 },
+  { to: '/dashboard', label: 'Dashboard', icon: '◱', sub: 'Metrics', unlock: (s: Store) => s.application.some((a) => a.status !== 'saved') },
+  { to: '/inbox', label: 'Inbox sync', icon: '✉', sub: 'Recruiter email', unlock: (s: Store) => s.application.some((a) => a.status === 'applied') },
 ];
 
 const TITLES: Record<string, { title: string; sub: string }> = {
-  '/start': { title: 'Start here', sub: 'Every step, in order, with nothing left to guess' },
-  '/answers': { title: 'Answer bank', sub: 'The questions every application form asks — write each one once' },
-  '/dashboard': { title: 'Dashboard', sub: 'Where the funnel stands and what is due next' },
-  '/jobs': { title: 'Jobs', sub: 'Import from LinkedIn or a public board, search, rank, generate' },
-  '/pipeline': { title: 'Pipeline', sub: 'Saved → Tailored → Applied → Interviewing → Offer' },
-  '/contacts': { title: 'Network', sub: 'Referrals move these processes more than applications do' },
-  '/profile': { title: 'Master CV', sub: 'Type your history once, in both languages, tag it by track' },
+  '/start': { title: 'Start here', sub: 'One step at a time. Nothing to figure out.' },
+  '/profile': { title: 'My CV', sub: 'Your history, written once, in one place' },
+  '/jobs': { title: 'Jobs', sub: 'Bring openings in, search them, generate from them' },
   '/documents': { title: 'Documents', sub: 'Tailored CVs, cover letters, outreach and interview prep' },
+  '/pipeline': { title: 'Pipeline', sub: 'Saved → Tailored → Applied → Interviewing → Offer' },
+  '/answers': { title: 'Answer bank', sub: 'The questions every form asks — write each once' },
+  '/contacts': { title: 'Network', sub: 'People, and when to come back to them' },
+  '/dashboard': { title: 'Dashboard', sub: 'Where the funnel stands and what is due' },
   '/inbox': { title: 'Inbox sync', sub: 'Recruiter emails in English and Spanish, proposed not applied' },
 };
 
 export default function App() {
   const { store, error, reload } = useStore();
   const { pathname } = useLocation();
-  const head = TITLES[pathname] ?? TITLES['/dashboard'];
+  const [showAll, setShowAll] = useState(false);
+  const head = TITLES[pathname] ?? TITLES['/start'];
 
   if (error) {
     return (
@@ -58,27 +64,16 @@ export default function App() {
         <div className="w-60 border-r border-line bg-surface" />
         <div className="flex-1 space-y-4 p-8">
           <div className="skeleton h-8 w-56 rounded-lg" />
-          <div className="grid grid-cols-4 gap-3">
-            {[0, 1, 2, 3].map((i) => <div key={i} className="skeleton h-24 rounded-xl" />)}
-          </div>
+          <div className="skeleton h-24 rounded-xl" />
           <div className="skeleton h-64 rounded-xl" />
         </div>
       </div>
     );
   }
 
-  // Small counters in the sidebar, so the nav says what needs attention without opening it.
-  const live = store.application.filter((a) => LIVE_STATUSES.includes(a.status));
-  const dueNow = [
-    ...store.application.filter((a) => LIVE_STATUSES.includes(a.status) && (daysUntil(a.next_action_on) ?? 99) <= 0),
-    ...store.contact.filter((c) => (daysUntil(c.next_touch) ?? 99) <= 0),
-  ].length;
-  const counts: Record<string, number> = {
-    '/pipeline': live.length,
-    '/contacts': store.contact.length,
-    '/documents': store.document.length,
-    '/dashboard': dueNow,
-  };
+  const unlocked = NAV.filter((n) => n.unlock(store));
+  const hidden = NAV.length - unlocked.length;
+  const visible = showAll ? NAV : unlocked;
 
   return (
     <div className="flex min-h-full">
@@ -89,30 +84,36 @@ export default function App() {
         </div>
 
         <nav className="flex-1 space-y-0.5 px-3">
-          {NAV.map((n) => (
-            <NavLink
-              key={n.to}
-              to={n.to}
-              title={n.hint}
-              className={({ isActive }) =>
-                `group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-150 ${
-                  isActive
-                    ? 'bg-brand-50 font-medium text-brand-700 shadow-[inset_2px_0_0_var(--color-brand-600)]'
-                    : 'text-ink-700 hover:bg-sunken'}`}
-            >
-              <span className="w-4 text-center text-base leading-none opacity-70 transition group-hover:opacity-100">{n.icon}</span>
-              <span className="flex-1">{n.label}</span>
-              {counts[n.to] > 0 && (
-                <span className="rounded-full bg-sunken px-1.5 py-0.5 text-[10px] tabular-nums text-ink-500 group-hover:bg-white">
-                  {counts[n.to]}
+          {visible.map((n) => {
+            const locked = !n.unlock(store);
+            return (
+              <NavLink
+                key={n.to}
+                to={n.to}
+                className={({ isActive }) =>
+                  `group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-150 ${
+                    isActive ? 'bg-brand-50 font-medium text-brand-700 shadow-[inset_2px_0_0_var(--color-brand-600)]'
+                             : locked ? 'text-ink-400 hover:bg-sunken' : 'text-ink-700 hover:bg-sunken'}`}
+              >
+                <span className="w-4 text-center text-base leading-none opacity-70 transition group-hover:opacity-100">{n.icon}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{n.label}</span>
+                  <span className="block truncate text-[11px] text-ink-400">{n.sub}</span>
                 </span>
-              )}
-            </NavLink>
-          ))}
+                {locked && <span className="text-[10px]">🔒</span>}
+              </NavLink>
+            );
+          })}
         </nav>
 
+        {hidden > 0 && (
+          <button onClick={() => setShowAll((v) => !v)} className="px-5 py-2 text-left text-[11px] text-ink-400 transition hover:text-ink-700">
+            {showAll ? 'Hide what I haven’t reached' : `Show ${hidden} more section${hidden > 1 ? 's' : ''} →`}
+          </button>
+        )}
+
         <div className="border-t border-line px-5 py-4 text-[11px] leading-relaxed text-ink-400">
-          Local only. Your data sits in <code>data/career-lab.db</code> and never leaves this machine.
+          Local only. Your data stays in <code>data/career-lab.db</code> on this machine.
         </div>
       </aside>
 
@@ -124,7 +125,7 @@ export default function App() {
               <p className="text-sm text-ink-500">{head.sub}</p>
             </div>
             <nav className="flex gap-1 md:hidden">
-              {NAV.map((n) => (
+              {visible.map((n) => (
                 <NavLink key={n.to} to={n.to} title={n.label}
                          className={({ isActive }) => `rounded-md px-2 py-1 text-base ${isActive ? 'bg-brand-100 text-brand-700' : 'text-ink-500'}`}>
                   {n.icon}
@@ -146,7 +147,7 @@ export default function App() {
             <Route path="/documents" element={<Documents store={store} reload={reload} />} />
             <Route path="/answers" element={<Answers store={store} reload={reload} />} />
             <Route path="/inbox" element={<Inbox store={store} reload={reload} />} />
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<Navigate to="/start" replace />} />
           </Routes>
         </main>
       </div>

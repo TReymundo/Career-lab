@@ -67,7 +67,7 @@ function Identity({ profile, reload }: { profile: Profile; reload: () => Promise
       <div className="grid gap-3 md:grid-cols-3">
         <Field label="Full name" value={draft.name} onChange={(e) => set({ name: e.target.value })} />
         <Field label="Headline" value={draft.headline} onChange={(e) => set({ headline: e.target.value })}
-               placeholder="Risk Reporting Intern, J.P. Morgan · ITBA 2026" />
+               placeholder="Final-year business student · graduating 2026" />
         <Field label="Location" value={draft.location} onChange={(e) => set({ location: e.target.value })} placeholder="Buenos Aires, Argentina" />
         <Field label="Email" value={draft.email} onChange={(e) => set({ email: e.target.value })} />
         <Field label="Phone" value={draft.phone} onChange={(e) => set({ phone: e.target.value })} />
@@ -75,7 +75,7 @@ function Identity({ profile, reload }: { profile: Profile; reload: () => Promise
         <Area className="md:col-span-3" label="Profile paragraph (goes at the top of the CV and inside cover letters)" rows={3}
               value={draft.summary} onChange={(e) => set({ summary: e.target.value })} />
         <Area className="md:col-span-2" label="Skills line" rows={2} value={draft.skills}
-              onChange={(e) => set({ skills: e.target.value })} placeholder="Excel (advanced), SQL, Python (pandas), Bloomberg, Tableau" />
+              onChange={(e) => set({ skills: e.target.value })} placeholder="Excel, SQL, Python, Canva — whatever you actually use" />
         <Area label="Languages" rows={2} value={draft.languages} onChange={(e) => set({ languages: e.target.value })}
               placeholder="Spanish (native), English (C1)" />
       </div>
@@ -86,11 +86,11 @@ function Identity({ profile, reload }: { profile: Profile; reload: () => Promise
         </p>
         <div className="grid gap-3 md:grid-cols-3">
           <Field label="Titular" value={draft.headline_es} onChange={(e) => set({ headline_es: e.target.value })}
-                 placeholder="Analista de Riesgos (pasantía), J.P. Morgan · ITBA 2026" />
+                 placeholder="Estudiante de último año · me recibo en 2026" />
           <Area className="md:col-span-2" label="Perfil" rows={3} value={draft.summary_es}
                 onChange={(e) => set({ summary_es: e.target.value })} />
           <Area className="md:col-span-2" label="Competencias" rows={2} value={draft.skills_es}
-                onChange={(e) => set({ skills_es: e.target.value })} placeholder="Excel (avanzado), SQL, Python (pandas), Bloomberg" />
+                onChange={(e) => set({ skills_es: e.target.value })} placeholder="Excel, SQL, Python — lo que uses de verdad" />
           <Area label="Idiomas" rows={2} value={draft.languages_es} onChange={(e) => set({ languages_es: e.target.value })}
                 placeholder="Español (nativo), Inglés (C1)" />
         </div>

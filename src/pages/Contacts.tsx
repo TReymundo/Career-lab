@@ -112,7 +112,7 @@ function Detail({ contact, store, reload, close }: { contact: Contact; store: St
         </div>
         <div className="space-y-3">
           <Field label="How you met" value={draft.how_met} onChange={(e) => set({ how_met: e.target.value })}
-                 placeholder="ITBA alum, floor rotation, referral from…" />
+                 placeholder="University alum, careers fair, referral from…" />
           <Area label="Notes" rows={6} value={draft.notes} onChange={(e) => set({ notes: e.target.value })}
                 placeholder="What they said, what they offered, what you promised to send." />
         </div>

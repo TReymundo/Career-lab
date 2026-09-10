@@ -7,6 +7,7 @@ import { ATS, fetchAts, importDelimited, importLinkedInProfile, importPastedBloc
 import { applyProposal, emailConfigured, scanMailbox, type Proposal } from './email.ts';
 import { fileName, toDocx, toPdf } from './export.ts';
 import { applyParsedCV, docxToText, parseCV } from './cvimport.ts';
+import { improveBullets, keyStatus, reviewCV, translate, writeSummary, freeform } from './ai.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -125,6 +126,50 @@ app.put('/api/setting/:key', (req, res) => {
   db.prepare('INSERT INTO setting (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
     .run(req.params.key, String(req.body?.value ?? ''));
   res.json({ ok: true });
+});
+
+
+/** AI assistance. Nothing here runs unless the user presses a button in the AI step. */
+app.get('/api/ai/status', (_req, res) => res.json(keyStatus()));
+
+app.put('/api/ai/key', (req, res) => {
+  const value = String(req.body?.key ?? '').trim();
+  db.prepare("INSERT INTO setting (key, value) VALUES ('google_api_key', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+    .run(value);
+  res.json(keyStatus());
+});
+
+app.post('/api/ai/:action', async (req, res) => {
+  const { action } = req.params;
+  try {
+    if (action === 'bullets') {
+      const { bullets, role, track, lang } = req.body ?? {};
+      if (!Array.isArray(bullets) || !bullets.length) return res.status(400).json({ error: 'no bullets sent' });
+      return res.json({ suggestions: await improveBullets(bullets.slice(0, 20), { role: role ?? '', track: track ?? '', lang: lang ?? 'en' }) });
+    }
+    if (action === 'summary') {
+      const { headline, bullets, track, lang } = req.body ?? {};
+      return res.json({ text: await writeSummary({ headline: headline ?? '', bullets: bullets ?? [], track: track ?? '', lang: lang ?? 'en' }) });
+    }
+    if (action === 'review') {
+      const { cv, track, jd } = req.body ?? {};
+      if (!cv) return res.status(400).json({ error: 'no cv sent' });
+      return res.json({ review: await reviewCV(String(cv), { track: track ?? '', jd }) });
+    }
+    if (action === 'translate') {
+      const { text, to } = req.body ?? {};
+      if (!text) return res.status(400).json({ error: 'no text sent' });
+      return res.json({ text: await translate(String(text), to === 'en' ? 'en' : 'es') });
+    }
+    if (action === 'freeform') {
+      const { prompt } = req.body ?? {};
+      if (!prompt) return res.status(400).json({ error: 'no prompt sent' });
+      return res.json({ text: await freeform(String(prompt)) });
+    }
+    return res.status(404).json({ error: 'unknown action' });
+  } catch (e) {
+    res.status(502).json({ error: e instanceof Error ? e.message : String(e) });
+  }
 });
 
 /** Real files, because no application form accepts Markdown. */
@@ -292,7 +337,7 @@ app.post('/api/jobs/:id/promote', (req, res) => {
   const info = db.prepare(
     `INSERT INTO application (company, role, track, location, status, source, url, jd)
      VALUES (?, ?, ?, ?, 'target', ?, ?, ?)`,
-  ).run(job.company, job.title, job.track || String(req.body?.track ?? 'markets'), job.location, job.source, job.url, job.description);
+  ).run(job.company, job.title, job.track || String(req.body?.track ?? 'finance'), job.location, job.source, job.url, job.description);
 
   db.prepare('UPDATE job SET application_id = ? WHERE id = ?').run(info.lastInsertRowid as number, job.id);
   res.json({ application_id: info.lastInsertRowid, already: false });

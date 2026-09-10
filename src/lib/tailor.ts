@@ -83,27 +83,29 @@ export function tailoringPlan(app: Application, experience: Experience[], cvText
 }
 
 /** Three sentences. Any longer and a recruiter stops reading on a phone. */
+/** Three sentences. Any longer and a recruiter stops reading on a phone. */
 export function coldOutreach(profile: Profile, app: Application, to: string, lang: Lang): string {
   const name = to.trim() || (lang === 'es' ? '[Nombre]' : '[Name]');
   const role = app.role || (lang === 'es' ? '[el puesto]' : '[the role]');
   const company = app.company || (lang === 'es' ? '[la empresa]' : '[the firm]');
   const me = profile.name || (lang === 'es' ? '[tu nombre]' : '[your name]');
+  const who = profile.headline || (lang === 'es' ? '[una línea sobre vos: qué estudiás o dónde trabajás]' : '[one line on you: what you study or where you work]');
 
   if (lang === 'es') {
     return [
-      `Hola ${name}, soy ${me}, estudiante de Gestión de Negocios en el ITBA y actualmente pasante en reporting de riesgos en J.P. Morgan en Buenos Aires.`,
-      `Vi la búsqueda de ${role} en ${company} y me interesa particularmente [una razón concreta: la mesa, el equipo, el producto].`,
+      `Hola ${name}, soy ${me} \u2014 ${who}.`,
+      `Vi la búsqueda de ${role} en ${company} y me interesa particularmente [una razón concreta: el equipo, el producto, algo que hayan hecho].`,
       `¿Tendrías quince minutos esta semana o la próxima para contarme cómo es el equipo por dentro?`,
       '',
-      `— ${me}`,
+      `\u2014 ${me}`,
     ].join('\n');
   }
   return [
-    `Hi ${name} — I’m ${me}, a Business Management student at ITBA and currently a risk reporting intern at J.P. Morgan in Buenos Aires.`,
-    `I saw the ${role} opening at ${company} and I’m drawn to it specifically because [one concrete reason: the desk, the team, the product].`,
+    `Hi ${name} \u2014 I am ${me}, ${who}.`,
+    `I saw the ${role} opening at ${company} and I am drawn to it specifically because [one concrete reason: the team, the product, something they shipped].`,
     `Would you have fifteen minutes this week or next to tell me what the team is actually like from the inside?`,
     '',
-    `— ${me}`,
+    `\u2014 ${me}`,
   ].join('\n');
 }
 
@@ -123,7 +125,7 @@ const TECHNICAL: QuestionSet[] = [
   },
   {
     when: ['var', 'risk', 'exposure', 'sensitivit', 'riesgo'],
-    en: ['Explain VaR to someone on the sales desk in two sentences, then tell me what it misses.', 'A limit breach appears at 7am. Walk me through your first thirty minutes.', 'What is the difference between historical and parametric VaR, and when does the choice matter?'],
+    en: ['Explain VaR in two sentences to someone non-technical, then tell me what it misses.', 'A limit breach appears first thing in the morning. Walk me through your first thirty minutes.', 'What is the difference between historical and parametric VaR, and when does the choice matter?'],
     es: ['Explicá VaR a alguien de la mesa de ventas en dos frases, y después decime qué no captura.', 'Aparece un exceso de límite a las 7am. Contame tus primeros treinta minutos.', '¿Diferencia entre VaR histórico y paramétrico, y cuándo importa la elección?'],
   },
   {
@@ -138,8 +140,8 @@ const TECHNICAL: QuestionSet[] = [
   },
   {
     when: ['consult', 'case', 'strategy', 'stakeholder'],
-    en: ['Case: a Buenos Aires retailer’s margin fell 4 points in a year. How do you structure it?', 'Estimate the annual market for corporate credit cards in Argentina.', 'Tell me about a time you changed a stakeholder’s mind with analysis.'],
-    es: ['Caso: un retailer porteño perdió 4 puntos de margen en un año. ¿Cómo lo estructurás?', 'Estimá el mercado anual de tarjetas corporativas en Argentina.', 'Contame una vez que cambiaste la opinión de un stakeholder con análisis.'],
+    en: ['Case: a retailer’s margin fell 4 points in a year. How do you structure the problem?', 'Estimate the annual market for corporate credit cards in your country.', 'Tell me about a time you changed a stakeholder’s mind with analysis.'],
+    es: ['Caso: un retailer perdió 4 puntos de margen en un año. ¿Cómo estructurás el problema?', 'Estimá el mercado anual de tarjetas corporativas en tu país.', 'Contame una vez que cambiaste la opinión de un stakeholder con análisis.'],
   },
   {
     when: ['excel', 'vba', 'modelling', 'modeling'],
@@ -151,7 +153,7 @@ const TECHNICAL: QuestionSet[] = [
 const BEHAVIOURAL = {
   en: [
     'Why this firm, and why this desk rather than the one next to it?',
-    'You are a risk reporting intern applying to a front-office seat. Why should we believe the move?',
+    'Why this role rather than the one your background points at more obviously?',
     'Tell me about a deadline you nearly missed. What did you do differently the next day?',
     'Describe a mistake in a report that reached someone senior. How did you handle it?',
     'You will be the most junior person in the room. How do you add value in month one?',
@@ -159,7 +161,7 @@ const BEHAVIOURAL = {
   ],
   es: [
     '¿Por qué esta firma, y por qué esta mesa y no la de al lado?',
-    'Sos pasante en reporting de riesgos y te postulás a front office. ¿Por qué deberíamos creer en el cambio?',
+    '¿Por qué este rol y no el que tu perfil sugeriría de forma más obvia?',
     'Contame una fecha límite que casi no llegaste. ¿Qué hiciste distinto al día siguiente?',
     'Describí un error en un reporte que llegó a alguien senior. ¿Cómo lo manejaste?',
     'Vas a ser el más junior de la sala. ¿Cómo aportás en el primer mes?',
@@ -227,7 +229,7 @@ export function interviewPrep(app: Application, experience: Experience[], lang: 
 
   const technical = TECHNICAL.filter((q) => has(jd, ...q.when)).flatMap((q) => q[lang]);
   const fallback = lang === 'es'
-    ? ['El aviso no menciona herramientas concretas. Preparate igual sobre lo que ya sabés: SQL, Excel, y el reporte que producís todos los días.']
+    ? ['El aviso no menciona herramientas concretas. Preparate sobre las herramientas que ya usás y sobre el trabajo de tus propios bullets — eso es lo que van a preguntar.']
     : ['The posting names no specific tools. Prepare on what you already do anyway: SQL, Excel, and the report you produce daily.'];
 
   const stories = experience

@@ -19,7 +19,7 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
   const [total, setTotal] = useState(0);
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState(false);
-  const [track, setTrack] = useState<Track>('markets');
+  const [track, setTrack] = useState<Track>('finance');
   const [lang, setLang] = useState<Lang>('es');
   const [showImport, setShowImport] = useState(false);
 
@@ -278,7 +278,7 @@ function ImportPanel({ onDone }: { onDone: () => Promise<void> }) {
             title, then company, then location, and any URL on its own line. Rough on purpose — fix the rows afterwards.
           </p>
           <Area rows={8} value={text} onChange={(e) => setText(e.target.value)} className="font-mono text-xs"
-                placeholder={'Sales & Trading Analyst\nJ.P. Morgan\nBuenos Aires\nhttps://…\n\nBusiness Analyst\nBain & Company\nBuenos Aires'} />
+                placeholder={'Junior Analyst\nAcme Corp\nBuenos Aires\nhttps://…\n\nGraduate Programme\nAnother Company\nRemote'} />
           <Button variant="primary" disabled={busy || !text.trim()} onClick={() => run(async () => {
             const r = await api.importJobs(text, 'blocks', 'paste');
             return `${r.inserted} added, ${r.skipped} already there.`;
@@ -292,7 +292,7 @@ function ImportPanel({ onDone }: { onDone: () => Promise<void> }) {
             Pulls a company’s live openings from the public job-board API its own careers page uses.
             The slug is the company name in its careers URL — <code className="text-brand-600">boards.greenhouse.io/<b>stripe</b></code>,
             <code className="text-brand-600"> jobs.lever.co/<b>palantir</b></code>. Most large banks run their own systems,
-            so expect this to work for tech, fintech and startups rather than J.P. Morgan.
+            so expect this to work for tech, fintech and startups rather than large banks.
           </p>
           <div className="flex flex-wrap gap-2">
             <Select value={provider} onChange={(e) => setProvider(e.target.value)} className="w-44">

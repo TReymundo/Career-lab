@@ -1,10 +1,16 @@
-export type Track = 'markets' | 'ib' | 'consulting' | 'product' | 'other';
+export type Track = 'finance' | 'ib' | 'consulting' | 'data' | 'tech' | 'product' | 'other';
 
+/**
+ * Tracks are how the same experience gets aimed at different kinds of employer.
+ * Pick the ones you actually apply to; the rest simply never appear.
+ */
 export const TRACKS: { id: Track; label: string; short: string }[] = [
-  { id: 'markets', label: 'Markets — Sales & Trading', short: 'S&T' },
-  { id: 'ib', label: 'Investment Banking', short: 'IB' },
-  { id: 'consulting', label: 'Consulting / Strategy', short: 'Consulting' },
-  { id: 'product', label: 'Product / Corporate Strategy', short: 'Product' },
+  { id: 'finance', label: 'Finance, markets & banking', short: 'Finance' },
+  { id: 'ib', label: 'Investment banking / M&A', short: 'IB' },
+  { id: 'consulting', label: 'Consulting & strategy', short: 'Consulting' },
+  { id: 'data', label: 'Data & analytics', short: 'Data' },
+  { id: 'tech', label: 'Software & engineering', short: 'Tech' },
+  { id: 'product', label: 'Product, marketing & operations', short: 'Product' },
   { id: 'other', label: 'Other', short: 'Other' },
 ];
 

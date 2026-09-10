@@ -31,7 +31,7 @@ export interface Proposal {
 
 type Rule = { status: string; confidence: 'high' | 'medium'; patterns: RegExp[] };
 
-/** English and Spanish, because recruiting in Buenos Aires happens in both. */
+/** English and Spanish, because plenty of processes run in both. */
 const RULES: Rule[] = [
   {
     status: 'offer', confidence: 'high',
@@ -80,7 +80,7 @@ function isForward(current: string, proposed: string) {
 
 const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
-/** Company name in the from-address or subject; "J.P. Morgan" also matches "jpmorgan.com". */
+/** Company name in the from-address or subject; "Acme Corp" also matches "acmecorp.com". */
 function matchApplication(from: string, subject: string, apps: { id: number; company: string; role: string; status: string }[]) {
   const haystack = normalise(`${from} ${subject}`);
   const squashed = haystack.replace(/ /g, '');

@@ -21,16 +21,16 @@ export const TEMPLATES: { id: TemplateId; label: Record<Lang, string>; note: Rec
     id: 'banking',
     label: { en: 'Banking & Markets', es: 'Banca y Mercados' },
     note: {
-      en: 'Education first, dense, one page. The order graduate recruiting at banks expects from a student.',
-      es: 'Formación primero, denso, una página. El orden que espera el reclutamiento de graduados en bancos.',
+      en: 'Education first, dense, one page. What graduate recruiting at banks and finance firms expects from a student.',
+      es: 'Formación primero, denso, una página. El orden que esperan los programas de graduados en bancos y firmas financieras.',
     },
   },
   {
     id: 'consulting',
     label: { en: 'Consulting', es: 'Consultoría' },
     note: {
-      en: 'Education and results first, leadership given its own weight — what MBB screening reads for.',
-      es: 'Formación y resultados primero, liderazgo con peso propio — lo que mira el filtro de MBB.',
+      en: 'Education and results first, leadership given its own weight — what consulting screening reads for.',
+      es: 'Formación y resultados primero, liderazgo con peso propio — lo que mira el filtro de consultoría.',
     },
   },
 ];
@@ -129,53 +129,73 @@ interface CoverInput {
 }
 
 const TRACK_PITCH: Record<Track, Record<Lang, { why: string; close: string }>> = {
-  markets: {
+  finance: {
     en: {
-      why: 'I want to be on a trading floor because the feedback loop is immediate and the work is decided in real time — the opposite of the monthly reporting cycle I know well enough to want to leave behind.',
-      close: 'I would welcome the chance to spend fifteen minutes on the phone talking about the desk and where a graduate can add value from day one.',
+      why: '[Say why finance, in one honest sentence — what about the work itself appeals to you, not what it pays or what it leads to.]',
+      close: 'I would welcome fifteen minutes on the phone to talk about the team and where someone joining can add value early.',
     },
     es: {
-      why: 'Quiero estar en una mesa de operaciones porque la devolución es inmediata y las decisiones se toman en tiempo real — lo contrario del ciclo mensual de reporting que conozco lo suficiente como para querer dejarlo atrás.',
-      close: 'Agradecería quince minutos para conversar sobre la mesa y sobre dónde puede aportar un graduado desde el primer día.',
+      why: '[Decí por qué finanzas, en una frase honesta: qué te atrae del trabajo en sí, no lo que paga ni a dónde lleva.]',
+      close: 'Agradecería quince minutos para conversar sobre el equipo y dónde puede aportar alguien que recién se suma.',
     },
   },
   ib: {
     en: {
-      why: 'Banking appeals to me because the analysis actually decides something — a price, a structure, a deal that either clears or does not — and I want to build that judgement early, alongside people who do it at scale.',
+      why: '[Say why banking specifically — the analysis deciding something real, the pace, the exposure. In your words, not a brochure\u2019s.]',
       close: 'I would be grateful for a short conversation about the group and what the strongest analysts in your class did in their first year.',
     },
     es: {
-      why: 'La banca de inversión me atrae porque el análisis define algo concreto — un precio, una estructura, una operación que cierra o no — y quiero construir ese criterio temprano, junto a gente que lo hace a escala.',
-      close: 'Agradecería una conversación breve sobre el equipo y sobre qué hicieron en su primer año los analistas más fuertes de su promoción.',
+      why: '[Decí por qué banca de inversión en particular: el análisis que define algo concreto, el ritmo, la exposición. En tus palabras.]',
+      close: 'Agradecería una conversación breve sobre el equipo y sobre qué hicieron en su primer año los analistas más fuertes.',
     },
   },
   consulting: {
     en: {
-      why: 'Consulting attracts me because the problem changes every few months and the standard of structured thinking is set by the people around you. My degree at ITBA has been exactly that exercise, and I want to do it against real client stakes.',
-      close: 'I would appreciate a short conversation about the office and the kind of cases a joiner from a finance background tends to be staffed on.',
+      why: '[Say why consulting — the problem changing every few months, the standard of thinking around you, the range of industries.]',
+      close: 'I would appreciate a short conversation about the office and the kind of cases someone with my background tends to be staffed on.',
     },
     es: {
-      why: 'La consultoría me atrae porque el problema cambia cada pocos meses y el nivel de pensamiento estructurado lo marca la gente que tenés al lado. Mi carrera en el ITBA fue exactamente ese ejercicio, y quiero hacerlo con un cliente real en juego.',
-      close: 'Agradecería una conversación breve sobre la oficina y sobre el tipo de proyectos en los que suele entrar alguien con perfil financiero.',
+      why: '[Decí por qué consultoría: el problema que cambia cada pocos meses, el nivel de pensamiento estructurado, la variedad de industrias.]',
+      close: 'Agradecería una conversación breve sobre la oficina y el tipo de proyectos en los que suele entrar alguien con mi perfil.',
+    },
+  },
+  data: {
+    en: {
+      why: '[Say why data — what you want the analysis to change, and the kind of question you find worth answering.]',
+      close: 'I would welcome a short conversation about the team and the problems it is working on this year.',
+    },
+    es: {
+      why: '[Decí por qué datos: qué querés que cambie el análisis, y qué tipo de pregunta te parece que vale la pena responder.]',
+      close: 'Agradecería una conversación breve sobre el equipo y los problemas en los que está trabajando este año.',
+    },
+  },
+  tech: {
+    en: {
+      why: '[Say why this kind of engineering — what you have built, and what you want to build next that you cannot build alone.]',
+      close: 'I would welcome a short conversation about the team, the stack and what a new joiner ships in their first months.',
+    },
+    es: {
+      why: '[Decí por qué este tipo de ingeniería: qué construiste, y qué querés construir después que no podés hacer solo.]',
+      close: 'Agradecería una conversación breve sobre el equipo, el stack y qué entrega alguien nuevo en sus primeros meses.',
     },
   },
   product: {
     en: {
-      why: 'I want to sit closer to the decision than reporting allows — where the data I already produce becomes the argument for what the business should actually do next.',
+      why: '[Say why product or operations — what decision you want to be close to, and why describing it is not enough for you.]',
       close: 'I would welcome a short conversation about the team and the problems it is prioritising this year.',
     },
     es: {
-      why: 'Quiero estar más cerca de la decisión de lo que permite el reporting — donde los datos que ya produzco se convierten en el argumento de qué debería hacer el negocio.',
-      close: 'Agradecería una conversación breve sobre el equipo y sobre los problemas que está priorizando este año.',
+      why: '[Decí por qué producto u operaciones: a qué decisión querés estar cerca, y por qué describirla no te alcanza.]',
+      close: 'Agradecería una conversación breve sobre el equipo y los problemas que está priorizando este año.',
     },
   },
   other: {
     en: {
-      why: 'I am looking for a role where the analysis I do changes a decision rather than describing one after the fact.',
+      why: '[Say what draws you to this kind of work, concretely enough that a competitor could not copy the sentence.]',
       close: 'I would welcome a short conversation about the team and the role.',
     },
     es: {
-      why: 'Busco un rol donde el análisis que hago cambie una decisión, en lugar de describirla después de tomada.',
+      why: '[Decí qué te atrae de este tipo de trabajo, de forma concreta: algo que otro candidato no podría copiar.]',
       close: 'Agradecería una conversación breve sobre el equipo y la posición.',
     },
   },
@@ -191,7 +211,7 @@ const COVER_COPY = {
     hookHole: (company: string) =>
       `[One specific, non-generic reason you want ${company} in particular — a desk, a deal, a person, a product.]`,
     proofHole: '[Your strongest concrete story: the situation, what you personally did, and the number or outcome that resulted. One paragraph, no adjectives you cannot defend.]',
-    summaryHole: '[Two lines on what you bring: the technical base, the languages, the degree finishing this year.]',
+    summaryHole: '[Two lines on what you bring: what you can already do, the tools you know, what you are finishing or have just finished.]',
   },
   es: {
     intro: (role: string, company: string) => `Me dirijo a ustedes para postularme a la posición de ${role} en ${company}.`,
@@ -202,7 +222,7 @@ const COVER_COPY = {
     hookHole: (company: string) =>
       `[Una razón concreta y no genérica por la que querés ${company} en particular — una mesa, una operación, una persona, un producto.]`,
     proofHole: '[Tu mejor historia concreta: la situación, qué hiciste vos, y el número o resultado que salió de ahí. Un párrafo, sin adjetivos que no puedas defender.]',
-    summaryHole: '[Dos líneas sobre lo que aportás: la base técnica, los idiomas, la carrera que terminás este año.]',
+    summaryHole: '[Dos líneas sobre lo que aportás: qué sabés hacer, qué herramientas manejás, qué estás terminando o acabás de terminar.]',
   },
 } as const;
 

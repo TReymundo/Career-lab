@@ -129,7 +129,7 @@ export function toPdf(md: string): Promise<Buffer> {
   });
 }
 
-/** `Perez_Tomas_CV_JPMorgan.pdf` — a recruiter's download folder should say who you are. */
+/** `Perez_Tomas_CV_AcmeCorp.pdf` — a recruiter's download folder should say who you are. */
 /** Pérez → Perez. Filenames travel through systems that mangle accents, names should not. */
 const deaccent = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ñ/gi, (m) => (m === 'ñ' ? 'n' : 'N'));
 
