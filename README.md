@@ -26,7 +26,7 @@ npm run seed
 Everything lives in `data/career-lab.db` — a single SQLite file. Back it up by copying it.
 It is gitignored, so the database never leaves your machine.
 
-## The five screens
+## The six screens
 
 | Screen | What it is for |
 | --- | --- |
