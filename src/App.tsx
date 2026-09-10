@@ -2,12 +2,14 @@ import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { useStore } from './lib/api.ts';
 import Dashboard from './pages/Dashboard.tsx';
 import Pipeline from './pages/Pipeline.tsx';
+import Jobs from './pages/Jobs.tsx';
 import Contacts from './pages/Contacts.tsx';
 import ProfilePage from './pages/Profile.tsx';
 import Documents from './pages/Documents.tsx';
 
 const NAV = [
   { to: '/dashboard', label: 'Dashboard' },
+  { to: '/jobs', label: 'Jobs' },
   { to: '/pipeline', label: 'Pipeline' },
   { to: '/contacts', label: 'Network' },
   { to: '/profile', label: 'Master CV' },
@@ -54,6 +56,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard store={store} />} />
+          <Route path="/jobs" element={<Jobs store={store} reload={reload} />} />
           <Route path="/pipeline" element={<Pipeline store={store} reload={reload} />} />
           <Route path="/contacts" element={<Contacts store={store} reload={reload} />} />
           <Route path="/profile" element={<ProfilePage store={store} reload={reload} />} />

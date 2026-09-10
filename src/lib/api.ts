@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Store } from './types.ts';
+import type { Job, Store } from './types.ts';
 
 const json = async (res: Response) => {
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
@@ -15,7 +15,32 @@ export const api = {
   remove: (table: string, id: number) => fetch(`/api/${table}/${id}`, { method: 'DELETE' }).then(json),
   saveProfile: (body: Record<string, string>) =>
     fetch('/api/profile', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(json),
+
+  searchJobs: (params: { q?: string; starred?: boolean; dismissed?: boolean; limit?: number; offset?: number }) => {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set('q', params.q);
+    if (params.starred) qs.set('starred', '1');
+    if (params.dismissed) qs.set('dismissed', '1');
+    qs.set('limit', String(params.limit ?? 200));
+    qs.set('offset', String(params.offset ?? 0));
+    return fetch(`/api/jobs/search?${qs}`).then(json) as Promise<{ total: number; rows: Job[] }>;
+  },
+
+  importJobs: (text: string, mode: 'table' | 'blocks', source?: string) =>
+    post('/api/jobs/import', { text, mode, source }) as Promise<{ inserted: number; skipped: number; mapped?: Record<string, string> }>,
+
+  fetchAts: (provider: string, slug: string) =>
+    post('/api/jobs/ats', { provider, slug }) as Promise<{ inserted: number; skipped: number }>,
+
+  importLinkedInProfile: (filename: string, text: string) =>
+    post('/api/import/linkedin-profile', { filename, text }) as Promise<{ imported: number; into: string }>,
+
+  promote: (jobId: number, track?: string) =>
+    post(`/api/jobs/${jobId}/promote`, { track }) as Promise<{ application_id: number; already: boolean }>,
 };
+
+const post = (url: string, body: unknown) =>
+  fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(json);
 
 /** One store for the whole app: reload after every mutation keeps state honest without a client cache. */
 export function useStore() {

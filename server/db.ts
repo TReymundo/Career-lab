@@ -89,3 +89,41 @@ CREATE TABLE IF NOT EXISTS document (
 
 db.exec(`INSERT OR IGNORE INTO profile (id) VALUES (1);`);
 export { dbPath };
+
+/** --- Job board: the searchable list of openings, kept separate from applications. --- */
+db.exec(`
+CREATE TABLE IF NOT EXISTS job (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source TEXT NOT NULL DEFAULT 'manual',      -- linkedin-export | greenhouse | lever | ashby | paste | manual
+  external_id TEXT NOT NULL DEFAULT '',
+  company TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL DEFAULT '',
+  location TEXT NOT NULL DEFAULT '',
+  url TEXT NOT NULL DEFAULT '',
+  posted_on TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  track TEXT NOT NULL DEFAULT '',
+  starred INTEGER NOT NULL DEFAULT 0,
+  dismissed INTEGER NOT NULL DEFAULT 0,
+  application_id INTEGER REFERENCES application(id) ON DELETE SET NULL,
+  imported_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS job_dedupe ON job (company, title, location, url);
+CREATE INDEX IF NOT EXISTS job_company ON job (company);
+
+CREATE TABLE IF NOT EXISTS saved_search (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  terms TEXT NOT NULL DEFAULT '[]',           -- JSON array of keywords, OR-matched
+  exclude TEXT NOT NULL DEFAULT '[]',         -- JSON array of keywords that disqualify
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`);
+
+/** Spanish counterparts, added after v1 — existing databases get them here rather than in the CREATE. */
+const profileCols = new Set(
+  (db.prepare('PRAGMA table_info(profile)').all() as { name: string }[]).map((c) => c.name),
+);
+for (const col of ['headline_es', 'summary_es', 'skills_es', 'languages_es']) {
+  if (!profileCols.has(col)) db.exec(`ALTER TABLE profile ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`);
+}

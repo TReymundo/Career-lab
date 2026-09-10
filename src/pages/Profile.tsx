@@ -79,6 +79,22 @@ function Identity({ profile, reload }: { profile: Profile; reload: () => Promise
         <Area label="Languages" rows={2} value={draft.languages} onChange={(e) => set({ languages: e.target.value })}
               placeholder="Spanish (native), English (C1)" />
       </div>
+
+      <div className="mt-5 rounded-lg border border-ink-800 bg-ink-950/40 p-4">
+        <p className="mb-3 text-[11px] uppercase tracking-wider text-slate-400">
+          Versión en español — used whenever you generate a Spanish CV. Anything left blank falls back to the English text.
+        </p>
+        <div className="grid gap-3 md:grid-cols-3">
+          <Field label="Titular" value={draft.headline_es} onChange={(e) => set({ headline_es: e.target.value })}
+                 placeholder="Analista de Riesgos (pasantía), J.P. Morgan · ITBA 2026" />
+          <Area className="md:col-span-2" label="Perfil" rows={3} value={draft.summary_es}
+                onChange={(e) => set({ summary_es: e.target.value })} />
+          <Area className="md:col-span-2" label="Competencias" rows={2} value={draft.skills_es}
+                onChange={(e) => set({ skills_es: e.target.value })} placeholder="Excel (avanzado), SQL, Python (pandas), Bloomberg" />
+          <Area label="Idiomas" rows={2} value={draft.languages_es} onChange={(e) => set({ languages_es: e.target.value })}
+                placeholder="Español (nativo), Inglés (C1)" />
+        </div>
+      </div>
     </Card>
   );
 }
@@ -141,8 +157,13 @@ function ExperienceCard({ exp, reload }: { exp: Experience; reload: () => Promis
                 <div className="space-y-3">
                   {bullets.map((b, i) => (
                     <div key={i} className="rounded-lg border border-ink-800 p-3">
-                      <Area rows={2} value={b.text} onChange={(e) => setBullet(i, { text: e.target.value })}
-                            placeholder="Verb + what you did + the number. e.g. “Rebuilt the daily VaR exception report in SQL, cutting production time from 90 to 20 minutes.”" />
+                      <div className="grid gap-2 md:grid-cols-2">
+                        <Area rows={2} value={b.text} onChange={(e) => setBullet(i, { text: e.target.value })}
+                              placeholder="EN — Verb + what you did + the number. e.g. “Rebuilt the daily VaR exception report in SQL, cutting production time from 90 to 20 minutes.”" />
+                        <Area rows={2} value={b.es ?? ''} onChange={(e) => setBullet(i, { es: e.target.value })}
+                              className={b.es?.trim() ? '' : 'opacity-70'}
+                              placeholder="ES — la misma línea en español. Si lo dejás vacío, el CV en español usa el texto en inglés." />
+                      </div>
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         {TRACKS.map((t) => (
                           <button key={t.id} onClick={() => toggleTrack(i, t.id)}

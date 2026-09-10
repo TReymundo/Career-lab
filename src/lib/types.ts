@@ -26,12 +26,26 @@ export const STATUSES: { id: Status; label: string; tone: string }[] = [
 
 export const LIVE_STATUSES: Status[] = ['target', 'networking', 'applied', 'screen', 'interview', 'final', 'offer'];
 
+export type Lang = 'en' | 'es';
+
 export interface Profile {
   id: number; name: string; headline: string; email: string; phone: string;
   location: string; linkedin: string; summary: string; languages: string; skills: string;
+  headline_es: string; summary_es: string; skills_es: string; languages_es: string;
 }
 
-export interface Bullet { text: string; tracks: Track[] }
+/** `es` is the Spanish rendering of the same bullet; empty means "not translated yet". */
+export interface Bullet { text: string; es?: string; tracks: Track[] }
+
+export interface Job {
+  id: number; source: string; external_id: string; company: string; title: string;
+  location: string; url: string; posted_on: string; description: string; track: string;
+  starred: number; dismissed: number; application_id: number | null; imported_at: string;
+}
+
+export interface SavedSearch {
+  id: number; name: string; terms: string; exclude: string; created_at: string;
+}
 
 export interface Experience {
   id: number; kind: 'work' | 'education' | 'extra'; org: string; title: string;
@@ -66,12 +80,13 @@ export interface Store {
   contact: Contact[];
   event: AppEvent[];
   document: Doc[];
+  saved_search: SavedSearch[];
 }
 
 export const parseBullets = (raw: string): Bullet[] => {
   try {
     const v = JSON.parse(raw || '[]');
     return Array.isArray(v) ? v.filter((b) => b && typeof b.text === 'string')
-      .map((b) => ({ text: b.text, tracks: Array.isArray(b.tracks) ? b.tracks : [] })) : [];
+      .map((b) => ({ text: b.text, es: typeof b.es === 'string' ? b.es : '', tracks: Array.isArray(b.tracks) ? b.tracks : [] })) : [];
   } catch { return []; }
 };

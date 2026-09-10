@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Area, Badge, Button, Card, Empty, Field, Select, SectionTitle } from '../components/ui.tsx';
 import { api, fmtDate } from '../lib/api.ts';
-import { buildCV, buildCover, keywordGap, openPlaceholders } from '../lib/templates.ts';
-import { TRACKS, type Doc, type Store, type Track } from '../lib/types.ts';
+import { TEMPLATES, buildCV, buildCover, keywordGap, missingTranslations, openPlaceholders, type TemplateId } from '../lib/templates.ts';
+import { TRACKS, type Doc, type Lang, type Store, type Track } from '../lib/types.ts';
 
 /** Minimal markdown → HTML for the CV preview. Handles exactly what buildCV emits. */
 function renderMarkdown(md: string): string {
@@ -31,9 +32,15 @@ function renderMarkdown(md: string): string {
 }
 
 export default function Documents({ store, reload }: { store: Store; reload: () => Promise<void> }) {
-  const [appId, setAppId] = useState<number | ''>(store.application[0]?.id ?? '');
+  // The Jobs screen hands off through the URL: /documents?app=12&lang=es&track=markets
+  const [params] = useSearchParams();
+  const [appId, setAppId] = useState<number | ''>(
+    params.get('app') ? Number(params.get('app')) : store.application[0]?.id ?? '',
+  );
   const [kind, setKind] = useState<'cv' | 'cover'>('cv');
-  const [track, setTrack] = useState<Track>('markets');
+  const [lang, setLang] = useState<Lang>((params.get('lang') as Lang) ?? 'en');
+  const [template, setTemplate] = useState<TemplateId>('ats');
+  const [track, setTrack] = useState<Track>((params.get('track') as Track) ?? 'markets');
   const [hook, setHook] = useState('');
   const [proof, setProof] = useState('');
   const [contact, setContact] = useState('');
@@ -42,26 +49,31 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
 
   const app = store.application.find((a) => a.id === appId) ?? null;
 
-  useEffect(() => { if (app) setTrack(app.track); }, [app?.id]);
+  // Follow the application's own track, unless the caller pinned one in the URL.
+  useEffect(() => { if (app && !params.get('track')) setTrack(app.track); }, [app?.id]);
 
   const generated = useMemo(() => {
-    if (kind === 'cv') return buildCV(store.profile, store.experience, track);
+    if (kind === 'cv') return buildCV(store.profile, store.experience, { track, lang, template });
     if (!app) return '';
-    return buildCover({ profile: store.profile, app: { ...app, track }, hook, proof, contact });
-  }, [kind, track, app?.id, hook, proof, contact, store.profile, store.experience]);
+    return buildCover({ profile: store.profile, app: { ...app, track }, lang, hook, proof, contact });
+  }, [kind, track, lang, template, app?.id, hook, proof, contact, store.profile, store.experience]);
 
   useEffect(() => { if (!touched) setBody(generated); }, [generated, touched]);
 
   const text = touched ? body : generated;
   const gaps = useMemo(() => keywordGap(app?.jd ?? '', text), [app?.jd, text]);
   const holes = openPlaceholders(text);
+  const untranslated = useMemo(
+    () => (lang === 'es' && kind === 'cv' ? missingTranslations(store.experience, track) : []),
+    [lang, kind, store.experience, track],
+  );
   const words = text.trim() ? text.trim().split(/\s+/).length : 0;
 
   const save = async () => {
     await api.create<Doc>('document', {
       application_id: app?.id ?? null,
       kind,
-      title: `${kind === 'cv' ? 'CV' : 'Cover letter'} — ${app ? app.company : TRACKS.find((t) => t.id === track)?.short} — ${new Date().toLocaleDateString('en-GB')}`,
+      title: `${kind === 'cv' ? 'CV' : 'Cover letter'} (${lang.toUpperCase()}) — ${app ? app.company : TRACKS.find((t) => t.id === track)?.short} — ${new Date().toLocaleDateString('en-GB')}`,
       body: text,
     });
     await reload();
@@ -82,6 +94,20 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
           <Select label="Track framing" value={track} onChange={(e) => { setTrack(e.target.value as Track); setTouched(false); }}>
             {TRACKS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
           </Select>
+          <Select label="Language / idioma" value={lang} onChange={(e) => { setLang(e.target.value as Lang); setTouched(false); }}>
+            <option value="en">English</option>
+            <option value="es">Español</option>
+          </Select>
+        </div>
+
+        <div className="mt-3 grid gap-3 md:grid-cols-4">
+          <Select label="Template" value={template} onChange={(e) => { setTemplate(e.target.value as TemplateId); setTouched(false); }}
+                  disabled={kind !== 'cv'}>
+            {TEMPLATES.map((t) => <option key={t.id} value={t.id}>{t.label[lang]}</option>)}
+          </Select>
+          <p className="self-end pb-2 text-xs text-slate-500 md:col-span-2">
+            {kind === 'cv' ? TEMPLATES.find((t) => t.id === template)?.note[lang] : ''}
+          </p>
           <div className="flex items-end gap-2">
             <Button onClick={() => { setTouched(false); setBody(generated); }}>Regenerate</Button>
             <Button variant="primary" onClick={save}>Save version</Button>
@@ -131,6 +157,24 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
                   <ul className="space-y-1 text-amber-300">{holes.map((h, i) => <li key={i}>{h}</li>)}</ul>
                 )}
               </div>
+              {lang === 'es' && kind === 'cv' && (
+                <div>
+                  <div className="mb-1 text-[11px] uppercase tracking-wider text-slate-400">Bullets sin traducir</div>
+                  {untranslated.length === 0
+                    ? <span className="text-emerald-300">Todo traducido.</span>
+                    : (
+                      <>
+                        <p className="text-amber-300">
+                          {untranslated.length} bullet{untranslated.length > 1 ? 's' : ''} aparecen en inglés porque no tienen versión en español.
+                        </p>
+                        <ul className="mt-1 space-y-0.5 text-xs text-slate-500">
+                          {untranslated.slice(0, 5).map((u, i) => <li key={i} className="truncate">{u.org}: {u.text}</li>)}
+                        </ul>
+                        <p className="mt-1 text-xs text-slate-600">Añade la versión ES en Master CV, campo “ES” de cada bullet.</p>
+                      </>
+                    )}
+                </div>
+              )}
               <div>
                 <div className="mb-1 text-[11px] uppercase tracking-wider text-slate-400">
                   Words in the posting your draft never uses
