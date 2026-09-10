@@ -7,9 +7,8 @@ import { db } from './db.ts';
  *   - GOOGLE_API_KEY in your .env file (preferred — it never touches the database), or
  *   - pasted into the app, which stores it in your local SQLite file in plain text.
  *
- * Nothing here runs unless you press a button. Every call sends only the text you are
- * working on: a bullet, a summary, a job description. It is never called in the background
- * and there is no usage of it anywhere else in the app.
+ * Nothing here runs unless you press a button, and every call sends only the text you are
+ * working on.
  */
 
 const MODEL = process.env.GOOGLE_MODEL ?? 'gemini-2.5-flash';
@@ -33,7 +32,16 @@ export function keyStatus() {
   };
 }
 
-async function generate(prompt: string, system: string): Promise<string> {
+type Schema = Record<string, unknown>;
+
+interface CallOptions {
+  system: string;
+  /** When given, the model is constrained to emit JSON matching this shape. */
+  schema?: Schema;
+  maxTokens?: number;
+}
+
+async function callGemini(prompt: string, { system, schema, maxTokens = 8192 }: CallOptions): Promise<string> {
   const key = getKey();
   if (!key) throw new Error('No Google API key set. Add one in the AI step, or put GOOGLE_API_KEY in your .env file.');
 
@@ -43,7 +51,14 @@ async function generate(prompt: string, system: string): Promise<string> {
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.4, maxOutputTokens: 2048 },
+      generationConfig: {
+        temperature: 0.4,
+        maxOutputTokens: maxTokens,
+        // 2.5 models think before answering, and that thinking is billed against the same
+        // output budget. Left on, a long review silently truncates and comes back unparseable.
+        thinkingConfig: { thinkingBudget: 0 },
+        ...(schema ? { responseMimeType: 'application/json', responseSchema: schema } : {}),
+      },
     }),
   });
 
@@ -55,74 +70,106 @@ async function generate(prompt: string, system: string): Promise<string> {
   }
 
   const data = await res.json() as {
-    candidates?: { content?: { parts?: { text?: string }[] } }[];
+    candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
     promptFeedback?: { blockReason?: string };
   };
   if (data.promptFeedback?.blockReason) throw new Error(`Google blocked the request: ${data.promptFeedback.blockReason}`);
 
-  const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
-  if (!text.trim()) throw new Error('Google returned an empty response.');
+  const candidate = data.candidates?.[0];
+  const text = candidate?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
+  if (!text.trim()) {
+    if (candidate?.finishReason === 'MAX_TOKENS') throw new Error('The response was cut short. Try again with fewer bullets selected.');
+    throw new Error('Google returned an empty response. Try again.');
+  }
   return text.trim();
 }
 
-/** Models like to wrap JSON in prose or fences; take the first array or object we can parse. */
-function extractJson<T>(text: string): T {
+/** Even with a schema, take a belt-and-braces pass at anything wrapped in prose or fences. */
+function parseJson<T>(text: string): T {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   const candidate = (fenced?.[1] ?? text).trim();
+  try {
+    return JSON.parse(candidate) as T;
+  } catch { /* fall through to the salvage attempt */ }
+
   const start = candidate.search(/[[{]/);
-  if (start < 0) throw new Error('The model did not return JSON.');
+  if (start < 0) throw new Error('did-not-return-json');
   const slice = candidate.slice(start);
   try {
     return JSON.parse(slice) as T;
   } catch {
-    const lastArray = slice.lastIndexOf(']');
-    const lastObject = slice.lastIndexOf('}');
-    const end = Math.max(lastArray, lastObject);
-    if (end < 0) throw new Error('The model did not return JSON.');
+    const end = Math.max(slice.lastIndexOf(']'), slice.lastIndexOf('}'));
+    if (end < 0) throw new Error('did-not-return-json');
     return JSON.parse(slice.slice(0, end + 1)) as T;
   }
 }
 
-const HOUSE_RULES = `You help someone write their own CV. Absolute rules:
-- Never invent facts, numbers, employers, dates or achievements. You may only rewrite what the user gives you.
-- If a bullet has no number, do not make one up. Instead, ask the user for the specific figure by leaving a bracketed prompt like [how many?] exactly where the number belongs.
-- Prefer plain, concrete language. No corporate filler: no "leveraged", "spearheaded", "synergies", "results-driven", "passionate".
-- Keep every bullet to one sentence, starting with a strong past-tense verb (or present tense if the role is current).
-- Write in the same language as the input.`;
-
-export interface BulletSuggestion {
-  original: string;
-  improved: string;
-  why: string;
-  needs: string[];
+/** One retry with a blunter instruction, because a single bad roll should not surface as an error. */
+async function json<T>(prompt: string, opts: CallOptions): Promise<T> {
+  try {
+    return parseJson<T>(await callGemini(prompt, opts));
+  } catch (e) {
+    if (e instanceof Error && e.message !== 'did-not-return-json') throw e;
+    const retry = await callGemini(`${prompt}\n\nReturn ONLY the JSON. No explanation, no code fence, nothing before or after it.`, opts);
+    try {
+      return parseJson<T>(retry);
+    } catch {
+      throw new Error('The model would not return usable JSON, twice. Try again, or with fewer items selected.');
+    }
+  }
 }
 
-export async function improveBullets(bullets: string[], context: { role: string; track: string; lang: string }) {
-  const prompt = `Here are CV bullet points from someone aiming at ${context.track || 'a graduate role'}${context.role ? ` (target role: ${context.role})` : ''}.
+const LANG_NAME = { en: 'English', es: 'Latin American Spanish (voseo, as used in Argentina and Uruguay)' } as const;
+export type Lang = keyof typeof LANG_NAME;
 
-Rewrite each one to be sharper and more concrete, following the rules exactly. Where a bullet lacks a measurable result, keep the sentence honest and insert a bracketed question asking the user for the missing figure.
+const houseRules = (lang: Lang) => `You help someone write their own CV. Absolute rules:
+- Never invent facts, numbers, employers, dates or achievements. You may only work with what the user gives you.
+- If something has no number, do not make one up. Leave a bracketed prompt like [how many?] exactly where the number belongs.
+- Prefer plain, concrete language. No corporate filler: no "leveraged", "spearheaded", "synergies", "results-driven", "passionate".
+- Keep every bullet to one sentence, starting with a strong verb.
+- Write ALL of your output in ${LANG_NAME[lang]}, including every explanation and label, regardless of the language of the input.
+- Fix spelling, accents and punctuation in names of companies and institutions when they are obviously wrong, but never change what the fact says.`;
 
-Return ONLY a JSON array, one object per input bullet, in the same order:
-[{"original": "...", "improved": "...", "why": "one short sentence on what you changed and why", "needs": ["any bracketed questions you inserted"]}]
+export interface BulletSuggestion { original: string; improved: string; why: string; needs: string[] }
+
+const BULLETS_SCHEMA: Schema = {
+  type: 'array',
+  items: {
+    type: 'object',
+    properties: {
+      original: { type: 'string' },
+      improved: { type: 'string' },
+      why: { type: 'string' },
+      needs: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['original', 'improved', 'why', 'needs'],
+  },
+};
+
+export async function improveBullets(bullets: string[], ctx: { role: string; track: string; lang: Lang }) {
+  const prompt = `These are CV bullet points from someone aiming at ${ctx.track || 'a graduate role'}${ctx.role ? ` (target role: ${ctx.role})` : ''}.
+
+Rewrite each one to be sharper and more concrete. Where a bullet has no measurable result, keep it honest and insert a bracketed question asking the user for the missing figure.
+
+Return one object per input bullet, in the same order. "why" is one short sentence on what you changed. "needs" lists any bracketed questions you inserted.
 
 Bullets:
 ${bullets.map((b, i) => `${i + 1}. ${b}`).join('\n')}`;
 
-  const raw = await generate(prompt, HOUSE_RULES);
-  return extractJson<BulletSuggestion[]>(raw);
+  return json<BulletSuggestion[]>(prompt, { system: houseRules(ctx.lang), schema: BULLETS_SCHEMA });
 }
 
-export async function writeSummary(input: { headline: string; bullets: string[]; track: string; lang: string }) {
-  const prompt = `Write a CV profile paragraph of at most 45 words for this person, in ${input.lang === 'es' ? 'Spanish' : 'English'}.
+export async function writeSummary(input: { headline: string; bullets: string[]; track: string; lang: Lang }) {
+  const prompt = `Write a CV profile paragraph of at most 45 words for this person.
 
 What they say about themselves: ${input.headline || '(nothing yet)'}
 Target area: ${input.track}
 Evidence from their CV:
 ${input.bullets.slice(0, 12).map((b) => `- ${b}`).join('\n') || '(no bullets yet)'}
 
-It must be specific to this person and contain nothing they have not told you. Return the paragraph only, no preamble, no quotes.`;
+It must be specific to this person and contain nothing they have not told you. Return the paragraph only — no preamble, no quotes, no heading.`;
 
-  return generate(prompt, HOUSE_RULES);
+  return callGemini(prompt, { system: houseRules(input.lang), maxTokens: 1024 });
 }
 
 export interface Review {
@@ -132,32 +179,88 @@ export interface Review {
   missing: string[];
 }
 
-export async function reviewCV(cv: string, context: { track: string; jd?: string }) {
-  const prompt = `Review this CV for someone applying to ${context.track || 'graduate roles'}.
-${context.jd ? `\nThey are targeting this job posting:\n${context.jd.slice(0, 3000)}\n` : ''}
-Be direct and specific. Point at actual lines. Do not pad with praise.
+const REVIEW_SCHEMA: Schema = {
+  type: 'object',
+  properties: {
+    verdict: { type: 'string' },
+    strengths: { type: 'array', items: { type: 'string' } },
+    fixes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { problem: { type: 'string' }, fix: { type: 'string' }, where: { type: 'string' } },
+        required: ['problem', 'fix', 'where'],
+      },
+    },
+    missing: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['verdict', 'strengths', 'fixes', 'missing'],
+};
 
-Return ONLY JSON:
-{"verdict":"two sentences, honest","strengths":["..."],"fixes":[{"problem":"what is wrong, quoting the line","fix":"the concrete change to make","where":"which section"}],"missing":["things a reviewer would expect to see and cannot find"]}
+export async function reviewCV(cv: string, ctx: { track: string; jd?: string; lang: Lang }) {
+  const prompt = `Review this CV for someone applying to ${ctx.track || 'graduate roles'}.
+${ctx.jd ? `\nThey are targeting this job posting:\n${ctx.jd.slice(0, 3000)}\n` : ''}
+Be direct and specific. Point at actual lines. Do not pad with praise. At most six fixes and six missing items.
 
 CV:
 ${cv.slice(0, 8000)}`;
 
-  const raw = await generate(prompt, HOUSE_RULES);
-  return extractJson<Review>(raw);
+  return json<Review>(prompt, { system: houseRules(ctx.lang), schema: REVIEW_SCHEMA });
 }
 
-export async function translate(text: string, to: 'es' | 'en') {
-  const prompt = `Translate the following CV text into ${to === 'es' ? 'natural Latin American Spanish (voseo where natural, as used in Argentina and Uruguay)' : 'natural British English'}.
+/**
+ * The editing pass: the model is handed the addressable fields of the CV and returns
+ * replacements for specific ones. Every edit is shown to the user before it is written.
+ */
+export interface FieldEdit { target: string; label: string; from: string; to: string; why: string }
 
-Keep it as a CV would be written by a native speaker — not a literal translation. Preserve every number, company name, tool name and bracketed [placeholder] exactly. Return only the translation.
+const EDIT_SCHEMA: Schema = {
+  type: 'array',
+  items: {
+    type: 'object',
+    properties: {
+      target: { type: 'string' },
+      label: { type: 'string' },
+      from: { type: 'string' },
+      to: { type: 'string' },
+      why: { type: 'string' },
+    },
+    required: ['target', 'label', 'from', 'to', 'why'],
+  },
+};
+
+export interface FieldItem { target: string; label: string; value: string }
+
+export async function polishFields(fields: FieldItem[], ctx: { track: string; lang: Lang }) {
+  const prompt = `Below are the individual editable fields of a CV, each with an id. The person is applying to ${ctx.track || 'graduate roles'}.
+
+Correct what is genuinely wrong: spelling, missing accents, mangled company or institution names, inconsistent capitalisation, headings that are too long, job titles that are too vague to be useful. Improve weak phrasing where you can do it without inventing anything.
+
+Rules for your output:
+- Return an entry ONLY for fields you are actually changing. Leave everything else out.
+- "target" must be copied exactly from the id given.
+- "label" is the human name of the field, as given.
+- "from" is the current value, "to" is your corrected value.
+- "why" is at most eight words.
+- Never change a number, a date, or the meaning of a fact.
+
+Fields:
+${fields.map((f) => `[${f.target}] ${f.label}: ${f.value}`).join('\n')}`;
+
+  return json<FieldEdit[]>(prompt, { system: houseRules(ctx.lang), schema: EDIT_SCHEMA });
+}
+
+export async function translate(text: string, to: Lang) {
+  const prompt = `Translate the following CV text into ${LANG_NAME[to]}.
+
+Write it as a native speaker would write a CV, not as a literal translation. Preserve every number, company name, tool name and bracketed [placeholder] exactly. Return only the translation.
 
 Text:
 ${text}`;
 
-  return generate(prompt, 'You are a professional translator working on CVs. Return only the translation.');
+  return callGemini(prompt, { system: 'You are a professional translator working on CVs. Return only the translation.' });
 }
 
-export async function freeform(prompt: string) {
-  return generate(prompt, HOUSE_RULES);
+export async function freeform(prompt: string, lang: Lang = 'en') {
+  return callGemini(prompt, { system: houseRules(lang) });
 }

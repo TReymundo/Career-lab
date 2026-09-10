@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Badge, Button, Card, Empty, Field, SectionTitle } from '../components/ui.tsx';
 import { api, fmtDate } from '../lib/api.ts';
+import { useT } from '../lib/i18n.ts';
 import { statusMeta, type Store } from '../lib/types.ts';
 
 interface Proposal {
@@ -9,6 +10,7 @@ interface Proposal {
 }
 
 export default function Inbox({ store, reload }: { store: Store; reload: () => Promise<void> }) {
+  const t = useT();
   const [status, setStatus] = useState<{ configured: boolean; user: string; host: string } | null>(null);
   const [days, setDays] = useState(30);
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -25,7 +27,7 @@ export default function Inbox({ store, reload }: { store: Store; reload: () => P
       const res = await api.emailScan(days);
       setProposals(res.proposals);
       setScanned(true);
-      setMsg(res.proposals.length ? '' : 'Scan finished. Nothing in that window matches an application in your pipeline.');
+      setMsg(res.proposals.length ? '' : t('Scan finished. Nothing in that window matches an application in your pipeline.', 'Escaneo terminado. Nada en ese rango coincide con una postulación de tu tablero.'));
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
     }
@@ -41,7 +43,7 @@ export default function Inbox({ store, reload }: { store: Store; reload: () => P
     await reload();
     setProposals([]);
     setRejected(new Set());
-    setMsg(`${accepted.length} application${accepted.length > 1 ? 's' : ''} updated, each with an entry in its activity log.`);
+    setMsg(t(`${accepted.length} application${accepted.length > 1 ? 's' : ''} updated, each with an entry in its activity log.`, `${accepted.length} postulación${accepted.length > 1 ? 'es' : ''} actualizada${accepted.length > 1 ? 's' : ''}, cada una con su entrada en el historial.`));
     setBusy(false);
   };
 
@@ -50,34 +52,33 @@ export default function Inbox({ store, reload }: { store: Store; reload: () => P
   return (
     <div className="space-y-6">
       <Card className="p-5">
-        <SectionTitle>Connection</SectionTitle>
+        <SectionTitle>{t('Connection', 'Conexión')}</SectionTitle>
         {status === null ? (
           <div className="skeleton h-16 rounded-lg" />
         ) : status.configured ? (
           <div className="flex flex-wrap items-center gap-3">
-            <Badge tone="emerald">connected</Badge>
+            <Badge tone="emerald">{t('connected', 'conectado')}</Badge>
             <span className="text-sm text-ink-700">{status.user} · {status.host}</span>
             <div className="ml-auto flex items-end gap-2">
-              <Field label="Look back (days)" type="number" value={days} min={1} max={365}
+              <Field label={t('Look back (days)', 'Mirar atrás (días)')} type="number" value={days} min={1} max={365}
                      onChange={(e) => setDays(Number(e.target.value))} className="w-32" />
-              <Button variant="primary" disabled={busy} onClick={scan}>{busy ? 'Scanning…' : 'Scan inbox'}</Button>
+              <Button variant="primary" disabled={busy} onClick={scan}>{busy ? t('Scanning…', 'Escaneando…') : t('Scan inbox', 'Escanear correo')}</Button>
             </div>
           </div>
         ) : (
           <div className="space-y-3 text-sm">
-            <Badge tone="amber">not configured</Badge>
+            <Badge tone="amber">{t('not configured', 'sin configurar')}</Badge>
             <p className="text-ink-700">
-              Scanning reads your mailbox over IMAP. Your password is never entered into this app and never stored in the
-              database — put it in a <code className="rounded bg-sunken px-1">.env</code> file next to <code className="rounded bg-sunken px-1">package.json</code>,
-              which only the API process on this machine reads:
+              {t('Scanning reads your mailbox over IMAP. Your password is never entered into this app and never stored in the database — put it in a .env file next to package.json, which only the API process on this machine reads:',
+                 'El escaneo lee tu correo por IMAP. Tu contraseña nunca se carga en esta app ni se guarda en la base — ponéla en un archivo .env junto a package.json, que sólo lee el proceso de la API en esta máquina:')}
             </p>
             <pre className="overflow-x-auto rounded-lg border border-line bg-sunken p-3 text-xs text-ink-700">{`IMAP_HOST=imap.gmail.com
 IMAP_PORT=993
 IMAP_USER=you@gmail.com
 IMAP_PASSWORD=your-app-password`}</pre>
             <p className="text-ink-500">
-              For Gmail use an <strong>app password</strong> (Google Account → Security → 2-Step Verification → App passwords),
-              never your account password. Restart <code className="rounded bg-sunken px-1">npm run dev</code> afterwards.
+              {t('For Gmail use an app password (Google Account → Security → 2-Step Verification → App passwords), never your account password. Restart npm run dev afterwards.',
+                 'Para Gmail usá una contraseña de aplicación (Cuenta de Google → Seguridad → Verificación en dos pasos → Contraseñas de aplicaciones), nunca la de tu cuenta. Después reiniciá npm run dev.')}
             </p>
           </div>
         )}
@@ -87,17 +88,19 @@ IMAP_PASSWORD=your-app-password`}</pre>
       <div>
         <SectionTitle right={
           proposals.length > 0
-            ? <Button variant="primary" disabled={busy || !accepted.length} onClick={apply}>Apply {accepted.length} change{accepted.length === 1 ? '' : 's'}</Button>
+            ? <Button variant="primary" disabled={busy || !accepted.length} onClick={apply}>{t(`Apply ${accepted.length} change${accepted.length === 1 ? '' : 's'}`, `Aplicar ${accepted.length} cambio${accepted.length === 1 ? '' : 's'}`)}</Button>
             : undefined
         }>
-          Proposed status changes
+          {t('Proposed status changes', 'Cambios de estado propuestos')}
         </SectionTitle>
 
         {proposals.length === 0 ? (
           <Empty>
             {scanned
-              ? 'Nothing to propose. Statuses only move forward, so already-current rows stay untouched.'
-              : 'Nothing scanned yet. A scan reads subjects and senders, matches them to companies in your pipeline, and proposes moves — it never applies them on its own.'}
+              ? t('Nothing to propose. Statuses only move forward, so rows that are already current stay untouched.',
+                  'Nada para proponer. Los estados sólo avanzan, así que las filas que ya están al día no se tocan.')
+              : t('Nothing scanned yet. A scan reads subjects and senders, matches them to companies in your pipeline, and proposes moves — it never applies them on its own.',
+                  'Todavía no escaneaste. El escaneo lee asuntos y remitentes, los cruza con las empresas de tu tablero, y propone movimientos — nunca los aplica solo.')}
           </Empty>
         ) : (
           <Card className="stagger divide-y divide-line overflow-hidden">
@@ -115,10 +118,10 @@ IMAP_PASSWORD=your-app-password`}</pre>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-ink-900">{p.company}</span>
                       <span className="text-sm text-ink-500">{p.role}</span>
-                      <Badge tone={statusMeta(p.current).tone}>{statusMeta(p.current).label}</Badge>
+                      <Badge tone={statusMeta(p.current).tone}>{t(statusMeta(p.current).label, statusMeta(p.current).es)}</Badge>
                       <span className="text-ink-400">→</span>
-                      <Badge tone={statusMeta(p.proposed).tone}>{statusMeta(p.proposed).label}</Badge>
-                      {p.confidence === 'medium' && <Badge tone="amber">check this one</Badge>}
+                      <Badge tone={statusMeta(p.proposed).tone}>{t(statusMeta(p.proposed).label, statusMeta(p.proposed).es)}</Badge>
+                      {p.confidence === 'medium' && <Badge tone="amber">{t('check this one', 'revisá esta')}</Badge>}
                     </div>
                     <p className="mt-1 truncate text-sm text-ink-700">{p.subject}</p>
                     <p className="truncate text-xs text-ink-400">{p.from} · matched “{p.matched}”</p>
@@ -130,14 +133,14 @@ IMAP_PASSWORD=your-app-password`}</pre>
           </Card>
         )}
         <p className="mt-2 text-xs text-ink-400">
-          Rules read English and Spanish. “Gracias por postularte” is treated as an acknowledgement, not a rejection —
-          it only ever moves a row to Applied.
+          {t('Rules read English and Spanish. “Gracias por postularte” is treated as an acknowledgement, not a rejection — it only ever moves a row to Applied.',
+             'Las reglas leen inglés y español. “Gracias por postularte” se toma como acuse de recibo, no como rechazo — sólo mueve la fila a Postulado.')}
         </p>
       </div>
 
       {emailEvents.length > 0 && (
         <div>
-          <SectionTitle>Applied from email</SectionTitle>
+          <SectionTitle>{t('Applied from email', 'Aplicado desde el correo')}</SectionTitle>
           <Card className="divide-y divide-line overflow-hidden">
             {emailEvents.map((e) => {
               const app = store.application.find((a) => a.id === e.application_id);

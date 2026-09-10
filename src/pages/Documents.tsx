@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Area, Badge, Button, Card, Empty, Field, Select, SectionTitle } from '../components/ui.tsx';
 import { api, fmtDate } from '../lib/api.ts';
+import { useT, useUILang } from '../lib/i18n.ts';
 import { TEMPLATES, buildCV, buildCover, keywordGap, missingTranslations, openPlaceholders, type TemplateId } from '../lib/templates.ts';
 import { coldOutreach, interviewDebrief, interviewPrep, tailoringPlan } from '../lib/tailor.ts';
 import { TRACKS, type Doc, type DocKind, type Lang, type Store, type Track } from '../lib/types.ts';
@@ -56,7 +57,9 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
   const [qIndex, setQIndex] = useState(0);
   const [appId, setAppId] = useState<number | ''>(queue[0] ?? store.application[0]?.id ?? '');
   const [kind, setKind] = useState<DocKind>('cv');
-  const [lang, setLang] = useState<Lang>((params.get('lang') as Lang) ?? 'en');
+  const t = useT();
+  const ui = useUILang();
+  const [lang, setLang] = useState<Lang>((params.get('lang') as Lang) ?? ui);
   const [template, setTemplate] = useState<TemplateId>('ats');
   const [track, setTrack] = useState<Track>((params.get('track') as Track) ?? 'finance');
   const [hook, setHook] = useState('');
@@ -172,35 +175,37 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
     <div className="space-y-6">
       {queue.length > 1 && (
         <Card className="flex flex-wrap items-center gap-3 border-brand-200 bg-brand-50 px-4 py-2.5 text-sm">
-          <span className="font-medium text-brand-700">Batch from Jobs — {qIndex + 1} of {queue.length}</span>
-          <Button disabled={qIndex === 0} onClick={() => stepTo(qIndex - 1)}>← Prev</Button>
-          <Button disabled={qIndex >= queue.length - 1} onClick={() => stepTo(qIndex + 1)}>Next →</Button>
+          <span className="font-medium text-brand-700">
+            {t(`From Jobs — ${qIndex + 1} of ${queue.length}`, `Desde Avisos — ${qIndex + 1} de ${queue.length}`)}
+          </span>
+          <Button disabled={qIndex === 0} onClick={() => stepTo(qIndex - 1)}>{t('← Prev', '← Anterior')}</Button>
+          <Button disabled={qIndex >= queue.length - 1} onClick={() => stepTo(qIndex + 1)}>{t('Next →', 'Siguiente →')}</Button>
           <Button variant="primary" className="ml-auto" onClick={() => generatePack(true)}>
-            Generate full pack for all {queue.length}
+            {t(`Generate everything for all ${queue.length}`, `Generar todo para los ${queue.length}`)}
           </Button>
         </Card>
       )}
 
       <Card className="p-4">
         <div className="grid gap-3 md:grid-cols-4">
-          <Select label="Document" value={kind} onChange={(e) => { setKind(e.target.value as DocKind); setTouched(false); }}>
+          <Select label={t('Document', 'Documento')} value={kind} onChange={(e) => { setKind(e.target.value as DocKind); setTouched(false); }}>
             {KINDS.map((k) => <option key={k.id} value={k.id}>{lang === 'es' ? k.es : k.label}</option>)}
           </Select>
-          <Select label="For application" value={appId} onChange={(e) => { setAppId(e.target.value ? Number(e.target.value) : ''); setTouched(false); }}>
-            <option value="">— none (generic) —</option>
+          <Select label={t('For application', 'Para la postulación')} value={appId} onChange={(e) => { setAppId(e.target.value ? Number(e.target.value) : ''); setTouched(false); }}>
+            <option value="">{t('— none (generic) —', '— ninguna (genérico) —')}</option>
             {store.application.map((a) => <option key={a.id} value={a.id}>{a.company} — {a.role || 'role TBD'}</option>)}
           </Select>
-          <Select label="Track framing" value={track} onChange={(e) => { setTrack(e.target.value as Track); setTouched(false); }}>
+          <Select label={t('Framing', 'Enfoque')} value={track} onChange={(e) => { setTrack(e.target.value as Track); setTouched(false); }}>
             {TRACKS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
           </Select>
-          <Select label="Language / idioma" value={lang} onChange={(e) => { setLang(e.target.value as Lang); setTouched(false); }}>
+          <Select label={t('Document language', 'Idioma del documento')} value={lang} onChange={(e) => { setLang(e.target.value as Lang); setTouched(false); }}>
             <option value="en">English</option>
             <option value="es">Español</option>
           </Select>
         </div>
 
         <div className="mt-3 grid gap-3 md:grid-cols-4">
-          <Select label="Template" value={template} disabled={kind !== 'cv'}
+          <Select label={t('Template', 'Plantilla')} value={template} disabled={kind !== 'cv'}
                   onChange={(e) => { setTemplate(e.target.value as TemplateId); setTouched(false); }}>
             {TEMPLATES.map((t) => <option key={t.id} value={t.id}>{t.label[lang]}</option>)}
           </Select>
@@ -208,8 +213,8 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
             {kind === 'cv' ? TEMPLATES.find((t) => t.id === template)?.note[lang] : ''}
           </p>
           <div className="flex flex-wrap items-end gap-2">
-            <Button onClick={() => { setTouched(false); setBody(generated); }}>Regenerate</Button>
-            <Button variant="soft" onClick={save}>Save version</Button>
+            <Button onClick={() => { setTouched(false); setBody(generated); }}>{t('Regenerate', 'Regenerar')}</Button>
+            <Button variant="soft" onClick={save}>{t('Save version', 'Guardar versión')}</Button>
           </div>
         </div>
 
@@ -217,45 +222,49 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
           <div className="mt-4 grid gap-3 md:grid-cols-3">
             {kind === 'cover' && (
               <>
-                <Area label="Your hook — why this firm, specifically" rows={3} value={hook}
+                <Area label={t('Your hook — why this firm, specifically', 'Tu gancho — por qué esta empresa en particular')} rows={3} value={hook}
                       onChange={(e) => { setHook(e.target.value); setTouched(false); }}
                       placeholder="A desk, a deal, a person you spoke to. Anything a competitor could paste into their own letter is not a hook." />
-                <Area label="Your strongest proof story" rows={3} value={proof}
+                <Area label={t('Your strongest proof story', 'Tu mejor historia con pruebas')} rows={3} value={proof}
                       onChange={(e) => { setProof(e.target.value); setTouched(false); }}
                       placeholder="Situation, what you personally did, the number that came out of it." />
               </>
             )}
-            <Field label={kind === 'outreach' ? 'Send it to (name)' : 'Name of the person you spoke to (optional)'}
+            <Field label={kind === 'outreach' ? t('Send it to (name)', 'Enviárselo a (nombre)')
+                                                : t('Name of the person you spoke to (optional)', 'Nombre de la persona con quien hablaste (opcional)')}
                    value={contact} onChange={(e) => { setContact(e.target.value); setTouched(false); }} />
           </div>
         )}
 
         {kind !== 'cv' && !app && (
           <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
-            Pick an application — this document needs the company and role.
+            {t('Pick an application — this document needs the company and role.', 'Elegí una postulación — este documento necesita la empresa y el puesto.')}
           </p>
         )}
 
         <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-3">
           <Button variant="primary" disabled={!app} onClick={() => generatePack(false)}>
-            Generate full pack for {app?.company ?? 'this application'}
+            {t(`Generate everything for ${app?.company ?? 'this application'}`, `Generar todo para ${app?.company ?? 'esta postulación'}`)}
           </Button>
-          <span className="text-xs text-ink-500">CV · cover letter · outreach DM · prep sheet · tailoring plan, saved together.</span>
+          <span className="text-xs text-ink-500">
+            {t('CV · cover letter · outreach message · interview prep · tailoring plan, saved together.',
+               'CV · carta · mensaje · preparación de entrevista · plan de adaptación, todo junto.')}
+          </span>
           {batchMsg && <span className="animate-fade ml-auto text-sm font-medium text-brand-700">{batchMsg}</span>}
         </div>
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-[1.25fr_1fr]">
         <div>
-          <SectionTitle right={<span className="text-xs text-ink-400">{words} words</span>}>Draft</SectionTitle>
+          <SectionTitle right={<span className="text-xs text-ink-400">{words} {t('words', 'palabras')}</span>}>{t('Draft', 'Borrador')}</SectionTitle>
           <Area rows={24} value={text} onChange={(e) => { setTouched(true); setBody(e.target.value); }} className="font-mono text-[13px]" />
           <div className="no-print mt-2 flex flex-wrap gap-2">
-            <Button onClick={() => navigator.clipboard.writeText(text)}>Copy</Button>
+            <Button onClick={() => navigator.clipboard.writeText(text)}>{t('Copy', 'Copiar')}</Button>
             <Button variant="primary" disabled={exporting !== ''} onClick={() => download('docx')}>
-              {exporting === 'docx' ? 'Building…' : 'Download DOCX'}
+              {exporting === 'docx' ? t('Building…', 'Generando…') : t('Download DOCX', 'Descargar DOCX')}
             </Button>
             <Button variant="soft" disabled={exporting !== ''} onClick={() => download('pdf')}>
-              {exporting === 'pdf' ? 'Building…' : 'Download PDF'}
+              {exporting === 'pdf' ? t('Building…', 'Generando…') : t('Download PDF', 'Descargar PDF')}
             </Button>
             <Button onClick={() => {
               const blob = new Blob([text], { type: 'text/markdown' });
@@ -265,18 +274,18 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
               a.click();
               URL.revokeObjectURL(a.href);
             }}>.md</Button>
-            <Button onClick={() => window.print()}>Print</Button>
+            <Button onClick={() => window.print()}>{t('Print', 'Imprimir')}</Button>
             {exportMsg && <span className="animate-fade self-center text-sm text-brand-700">{exportMsg}</span>}
           </div>
         </div>
 
         <div className="space-y-6">
           <div>
-            <SectionTitle>Checks</SectionTitle>
+            <SectionTitle>{t('Checks', 'Chequeos')}</SectionTitle>
             <Card className="space-y-4 p-4 text-sm">
               <div>
-                <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-ink-500">Unfilled placeholders</p>
-                {holes.length === 0 ? <span className="text-emerald-700">None — nothing bracketed left.</span> : (
+                <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-ink-500">{t('Unfilled placeholders', 'Espacios sin completar')}</p>
+                {holes.length === 0 ? <span className="text-emerald-700">{t('None — nothing bracketed left.', 'Ninguno — no queda nada entre corchetes.')}</span> : (
                   <ul className="space-y-1 text-amber-700">{holes.map((h, i) => <li key={i}>{h}</li>)}</ul>
                 )}
               </div>
@@ -300,24 +309,24 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
 
               <div>
                 <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-ink-500">
-                  ATS keywords the posting uses and your draft does not
+                  {t('Keywords the posting uses and your draft does not', 'Palabras clave del aviso que tu borrador no usa')}
                 </p>
-                {!app?.jd ? <span className="text-ink-500">Paste the job description on the application to run this check.</span>
-                  : gaps.length === 0 ? <span className="text-emerald-700">Good coverage.</span> : (
+                {!app?.jd ? <span className="text-ink-500">{t('Paste the job description on the application to run this check.', 'Pegá la descripción del aviso en la postulación para correr este chequeo.')}</span>
+                  : gaps.length === 0 ? <span className="text-emerald-700">{t('Good coverage.', 'Buena cobertura.')}</span> : (
                     <div className="flex flex-wrap gap-1.5">
                       {gaps.map((g) => <Badge key={g.word} tone="amber">{g.word} ×{g.count}</Badge>)}
                     </div>
                   )}
                 <p className="mt-2 text-xs text-ink-400">
-                  The <strong>Tailoring plan</strong> document shows which bullet each of these belongs in. Cover the ones that
-                  are genuinely true of you — a keyword you cannot defend in the interview is worse than a missing one.
+                  {t('The “Tailoring plan” document shows which line each of these belongs in. Cover the ones that are genuinely true of you — a keyword you cannot defend in an interview is worse than a missing one.',
+                     'El documento “Plan de adaptación” te dice en qué línea va cada una. Cubrí sólo las que sean ciertas — una palabra clave que no podés defender en la entrevista es peor que una que falta.')}
                 </p>
               </div>
             </Card>
           </div>
 
           <div>
-            <SectionTitle>Preview</SectionTitle>
+            <SectionTitle>{t('Preview', 'Vista previa')}</SectionTitle>
             <div className="print-sheet max-h-[520px] overflow-auto rounded-xl border border-line bg-white p-8 text-[13px] leading-relaxed text-ink-900
                             [&_a]:text-brand-700 [&_a]:underline
                             [&_h1]:mb-1 [&_h1]:text-2xl [&_h1]:font-bold
@@ -329,9 +338,10 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
       </div>
 
       <section className="no-print">
-        <SectionTitle>Saved versions</SectionTitle>
+        <SectionTitle>{t('Saved versions', 'Versiones guardadas')}</SectionTitle>
         {store.document.length === 0 ? (
-          <Empty>Save a version before each send — when a recruiter calls in six weeks you will want the exact document they read.</Empty>
+          <Empty>{t('Save a version before each send — when a recruiter calls in six weeks you will want the exact document they read.',
+                        'Guardá una versión antes de cada envío — cuando te llamen en seis semanas vas a querer el documento exacto que leyeron.')}</Empty>
         ) : (
           <Card className="stagger divide-y divide-line overflow-hidden">
             {store.document.slice(0, 20).map((d) => (
@@ -340,9 +350,9 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
                 <span className="min-w-0 flex-1 truncate text-ink-700">{d.title}</span>
                 <span className="shrink-0 text-xs tabular-nums text-ink-400">{fmtDate(d.created_at.slice(0, 10))}</span>
                 <button onClick={() => { setTouched(true); setBody(d.body); setKind(d.kind); }}
-                        className="text-xs text-brand-600 hover:underline">load</button>
+                        className="text-xs text-brand-600 hover:underline">{t('load', 'cargar')}</button>
                 <button onClick={async () => { await api.remove('document', d.id); await reload(); }}
-                        className="text-xs text-ink-400 hover:text-rose-600">delete</button>
+                        className="text-xs text-ink-400 hover:text-rose-600">{t('delete', 'borrar')}</button>
               </div>
             ))}
           </Card>

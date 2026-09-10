@@ -2,12 +2,14 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Area, Badge, Button, Card, Drawer, Empty, Field, Select, Toggle } from '../components/ui.tsx';
 import { api, daysUntil, fmtDate, today } from '../lib/api.ts';
+import { useT } from '../lib/i18n.ts';
 import { LIVE_STATUSES, STATUSES, TRACKS, statusMeta, type Application, type Status, type Store, type Track } from '../lib/types.ts';
 
 const trackShort = (id: string) => TRACKS.find((t) => t.id === id)?.short ?? id;
 const PRIORITIES = [{ v: 1, l: 'High' }, { v: 2, l: 'Medium' }, { v: 3, l: 'Low' }];
 
 export default function Pipeline({ store, reload }: { store: Store; reload: () => Promise<void> }) {
+  const t = useT();
   const [view, setView] = useState<'board' | 'list'>('board');
   const [openId, setOpenId] = useState<number | null>(null);
   const [q, setQ] = useState('');
@@ -62,27 +64,27 @@ export default function Pipeline({ store, reload }: { store: Store; reload: () =
           {(['board', 'list'] as const).map((v) => (
             <button key={v} onClick={() => setView(v)}
                     className={`px-3 py-1.5 text-sm capitalize transition ${view === v ? 'bg-brand-600 text-white' : 'text-ink-500 hover:bg-sunken'}`}>
-              {v === 'board' ? '▤ Board' : '☰ List'}
+              {v === 'board' ? t('▤ Board', '▤ Tablero') : t('☰ List', '☰ Lista')}
             </button>
           ))}
         </div>
-        <Field placeholder="Search company, role, notes…" value={q} onChange={(e) => setQ(e.target.value)} className="min-w-48 max-w-72 flex-1" />
+        <Field placeholder={t('Search company, role, notes…', 'Buscar empresa, puesto, notas…')} value={q} onChange={(e) => setQ(e.target.value)} className="min-w-48 max-w-72 flex-1" />
         <Select value={trackFilter} onChange={(e) => setTrackFilter(e.target.value)} className="w-48">
-          <option value="all">All tracks</option>
+          <option value="all">{t('All tracks', 'Todas las áreas')}</option>
           {TRACKS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
         </Select>
-        <Toggle checked={liveOnly} onChange={setLiveOnly}>Live only</Toggle>
-        <Button variant="primary" className="ml-auto" onClick={add}>+ Application</Button>
+        <Toggle checked={liveOnly} onChange={setLiveOnly}>{t('Live only', 'Sólo activos')}</Toggle>
+        <Button variant="primary" className="ml-auto" onClick={add}>{t('+ Application', '+ Postulación')}</Button>
       </div>
 
       {checked.size > 0 && (
         <Card className="animate-pop flex flex-wrap items-center gap-2 border-brand-200 bg-brand-50 px-4 py-2.5 text-sm">
-          <span className="font-medium text-brand-700">{checked.size} selected</span>
-          <span className="text-ink-500">move to</span>
+          <span className="font-medium text-brand-700">{t(`${checked.size} selected`, `${checked.size} seleccionados`)}</span>
+          <span className="text-ink-500">{t('move to', 'mover a')}</span>
           {STATUSES.map((s) => (
-            <Button key={s.id} disabled={busy} onClick={() => bulkMove(s.id)}>{s.label}</Button>
+            <Button key={s.id} disabled={busy} onClick={() => bulkMove(s.id)}>{t(s.label, s.es)}</Button>
           ))}
-          <Button variant="ghost" className="ml-auto" onClick={() => setChecked(new Set())}>Clear</Button>
+          <Button variant="ghost" className="ml-auto" onClick={() => setChecked(new Set())}>{t('Clear', 'Limpiar')}</Button>
         </Card>
       )}
 
@@ -105,7 +107,7 @@ export default function Pipeline({ store, reload }: { store: Store; reload: () =
                   dragOver === col.id ? 'border-brand-400 bg-brand-50' : 'border-line bg-sunken/60'}`}
               >
                 <div className="flex items-center justify-between px-1.5 py-1.5">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">{col.label}</span>
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">{t(col.label, col.es)}</span>
                   <Badge tone={col.tone}>{cards.length}</Badge>
                 </div>
                 <div className="stagger space-y-2">
@@ -130,7 +132,7 @@ export default function Pipeline({ store, reload }: { store: Store; reload: () =
                           />
                           <div className="min-w-0 flex-1">
                             <div className="truncate text-sm font-medium text-ink-900">{a.company}</div>
-                            <div className="truncate text-xs text-ink-500">{a.role || 'role TBD'}</div>
+                            <div className="truncate text-xs text-ink-500">{a.role || t('role TBD', 'puesto a definir')}</div>
                           </div>
                           {a.priority === 1 && <span className="text-brand-500" title="High priority">★</span>}
                         </div>
@@ -146,7 +148,7 @@ export default function Pipeline({ store, reload }: { store: Store; reload: () =
                     );
                   })}
                   {cards.length === 0 && (
-                    <p className="px-1.5 py-4 text-center text-xs text-ink-400">Drop here</p>
+                    <p className="px-1.5 py-4 text-center text-xs text-ink-400">{t('Drop here', 'Soltá acá')}</p>
                   )}
                 </div>
               </div>
@@ -154,7 +156,7 @@ export default function Pipeline({ store, reload }: { store: Store; reload: () =
           })}
         </div>
       ) : rows.length === 0 ? (
-        <Empty>No applications match. Add one, or check jobs on the Jobs screen and generate from there.</Empty>
+        <Empty>{t('No applications match. Add one, or tick jobs on the Jobs screen and generate from there.', 'No hay postulaciones que coincidan. Agregá una, o marcá avisos en Avisos y generá desde ahí.')}</Empty>
       ) : (
         <Card className="overflow-hidden">
           <table className="w-full text-sm">
@@ -165,11 +167,11 @@ export default function Pipeline({ store, reload }: { store: Store; reload: () =
                          checked={checked.size > 0 && checked.size === rows.length}
                          onChange={(e) => setChecked(e.target.checked ? new Set(rows.map((a) => a.id)) : new Set())} />
                 </th>
-                <th className="px-3 py-2 text-left font-medium">Company / role</th>
-                <th className="px-3 py-2 text-left font-medium">Track</th>
-                <th className="px-3 py-2 text-left font-medium">Status</th>
-                <th className="px-3 py-2 text-left font-medium">Next action</th>
-                <th className="px-3 py-2 text-right font-medium">Due</th>
+                <th className="px-3 py-2 text-left font-medium">{t('Company / role', 'Empresa / puesto')}</th>
+                <th className="px-3 py-2 text-left font-medium">{t('Track', 'Área')}</th>
+                <th className="px-3 py-2 text-left font-medium">{t('Status', 'Estado')}</th>
+                <th className="px-3 py-2 text-left font-medium">{t('Next action', 'Próxima acción')}</th>
+                <th className="px-3 py-2 text-right font-medium">{t('Due', 'Vence')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
@@ -190,7 +192,7 @@ export default function Pipeline({ store, reload }: { store: Store; reload: () =
                     <td className="px-3 py-2.5 text-xs text-ink-500">{trackShort(a.track)}</td>
                     <td className="px-3 py-2.5">
                       <Select value={a.status} onChange={(e) => move(a.id, e.target.value as Status)} className="w-36">
-                        {STATUSES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                        {STATUSES.map((s) => <option key={s.id} value={s.id}>{t(s.label, s.es)}</option>)}
                       </Select>
                     </td>
                     <td className="max-w-64 truncate px-3 py-2.5 text-ink-700">{a.next_action || '—'}</td>
@@ -215,6 +217,7 @@ export default function Pipeline({ store, reload }: { store: Store; reload: () =
 }
 
 function Detail({ app, store, reload, close }: { app: Application; store: Store; reload: () => Promise<void>; close: () => void }) {
+  const t = useT();
   const navigate = useNavigate();
   const [draft, setDraft] = useState<Application>(app);
   const [saving, setSaving] = useState(false);
@@ -247,11 +250,15 @@ function Detail({ app, store, reload, close }: { app: Application; store: Store;
       open
       onClose={close}
       title={draft.company || 'Untitled'}
-      subtitle={draft.role || 'Role not set'}
+      subtitle={draft.role || t('Role not set', 'Puesto sin definir')}
       footer={
         <div className="flex items-center gap-2">
-          <Button variant="primary" onClick={save} disabled={!dirty || saving}>{saving ? 'Saving…' : dirty ? 'Save changes' : 'Saved'}</Button>
-          <Button variant="soft" onClick={() => navigate(`/documents?app=${app.id}&track=${draft.track}`)}>Open in generator →</Button>
+          <Button variant="primary" onClick={save} disabled={!dirty || saving}>
+            {saving ? t('Saving…', 'Guardando…') : dirty ? t('Save changes', 'Guardar cambios') : t('Saved', 'Guardado')}
+          </Button>
+          <Button variant="soft" onClick={() => navigate(`/documents?app=${app.id}&track=${draft.track}`)}>
+            {t('Open in generator →', 'Abrir en el generador →')}
+          </Button>
           <Button
             variant="danger"
             className="ml-auto"
@@ -262,40 +269,40 @@ function Detail({ app, store, reload, close }: { app: Application; store: Store;
               close();
             }}
           >
-            Delete
+            {t('Delete', 'Eliminar')}
           </Button>
         </div>
       }
     >
       <div className="space-y-5">
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Company" value={draft.company} onChange={(e) => set({ company: e.target.value })} />
-          <Field label="Role" value={draft.role} onChange={(e) => set({ role: e.target.value })} />
-          <Field label="Location" value={draft.location} onChange={(e) => set({ location: e.target.value })} />
-          <Select label="Track" value={draft.track} onChange={(e) => set({ track: e.target.value as Track })}>
+          <Field label={t('Company', 'Empresa')} value={draft.company} onChange={(e) => set({ company: e.target.value })} />
+          <Field label={t('Role', 'Puesto')} value={draft.role} onChange={(e) => set({ role: e.target.value })} />
+          <Field label={t('Location', 'Ubicación')} value={draft.location} onChange={(e) => set({ location: e.target.value })} />
+          <Select label={t('Track', 'Área')} value={draft.track} onChange={(e) => set({ track: e.target.value as Track })}>
             {TRACKS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
           </Select>
-          <Select label="Status" value={draft.status} onChange={(e) => set({ status: e.target.value as Status })}>
-            {STATUSES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+          <Select label={t('Status', 'Estado')} value={draft.status} onChange={(e) => set({ status: e.target.value as Status })}>
+            {STATUSES.map((s) => <option key={s.id} value={s.id}>{t(s.label, s.es)}</option>)}
           </Select>
-          <Select label="Priority" value={draft.priority} onChange={(e) => set({ priority: Number(e.target.value) })}>
+          <Select label={t('Priority', 'Prioridad')} value={draft.priority} onChange={(e) => set({ priority: Number(e.target.value) })}>
             {PRIORITIES.map((p) => <option key={p.v} value={p.v}>{p.l}</option>)}
           </Select>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Next action" value={draft.next_action} onChange={(e) => set({ next_action: e.target.value })}
+          <Field label={t('Next action', 'Próxima acción')} value={draft.next_action} onChange={(e) => set({ next_action: e.target.value })}
                  placeholder="e.g. message alum on the FX desk" />
-          <Field label="Next action on" type="date" value={draft.next_action_on} onChange={(e) => set({ next_action_on: e.target.value })} />
-          <Field label="Deadline" type="date" value={draft.deadline} onChange={(e) => set({ deadline: e.target.value })} />
-          <Field label="Applied on" type="date" value={draft.applied_on} onChange={(e) => set({ applied_on: e.target.value })} />
-          <Field label="Source" value={draft.source} onChange={(e) => set({ source: e.target.value })} placeholder="referral, careers site…" />
-          <Field label="Posting URL" value={draft.url} onChange={(e) => set({ url: e.target.value })} placeholder="https://" />
+          <Field label={t('Next action on', 'Próxima acción el')} type="date" value={draft.next_action_on} onChange={(e) => set({ next_action_on: e.target.value })} />
+          <Field label={t('Deadline', 'Fecha límite')} type="date" value={draft.deadline} onChange={(e) => set({ deadline: e.target.value })} />
+          <Field label={t('Applied on', 'Me postulé el')} type="date" value={draft.applied_on} onChange={(e) => set({ applied_on: e.target.value })} />
+          <Field label={t('Source', 'Origen')} value={draft.source} onChange={(e) => set({ source: e.target.value })} placeholder="referral, careers site…" />
+          <Field label={t('Posting URL', 'Link del aviso')} value={draft.url} onChange={(e) => set({ url: e.target.value })} placeholder="https://" />
         </div>
 
-        <Area label="Notes" rows={3} value={draft.notes} onChange={(e) => set({ notes: e.target.value })}
+        <Area label={t('Notes', 'Notas')} rows={3} value={draft.notes} onChange={(e) => set({ notes: e.target.value })}
               placeholder="Comp, team size, what they said on the call, what to ask next time." />
-        <Area label="Job description — the generator and the prep sheet both read this" rows={6} value={draft.jd}
+        <Area label={t('Job description — the generator and the prep sheet both read this', 'Descripción del aviso — la usan el generador y la hoja de entrevista')} rows={6} value={draft.jd}
               onChange={(e) => set({ jd: e.target.value })} placeholder="Paste the full posting here." />
 
         {(contacts.length > 0 || docs.length > 0) && (
@@ -306,17 +313,17 @@ function Detail({ app, store, reload, close }: { app: Application; store: Store;
         )}
 
         <div className="border-t border-line pt-4">
-          <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-ink-500">Activity log</p>
+          <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-ink-500">{t('Activity log', 'Historial')}</p>
           <div className="mb-3 flex gap-2">
             <Select value={eventKind} onChange={(e) => setEventKind(e.target.value)} className="w-32">
               {['note', 'applied', 'email', 'call', 'interview', 'referral', 'offer', 'reject'].map((k) => <option key={k} value={k}>{k}</option>)}
             </Select>
             <Field value={eventNote} onChange={(e) => setEventNote(e.target.value)}
                    onKeyDown={(e) => { if (e.key === 'Enter') void logEvent(); }}
-                   placeholder="What happened? (Enter to log)" className="flex-1" />
-            <Button onClick={logEvent}>Log</Button>
+                   placeholder={t('What happened? (Enter to log)', '¿Qué pasó? (Enter para guardar)')} className="flex-1" />
+            <Button onClick={logEvent}>{t('Log', 'Anotar')}</Button>
           </div>
-          {events.length === 0 ? <p className="text-sm text-ink-400">Nothing logged yet.</p> : (
+          {events.length === 0 ? <p className="text-sm text-ink-400">{t('Nothing logged yet.', 'Todavía no hay nada.')}</p> : (
             <ul className="space-y-1.5">
               {events.map((e) => (
                 <li key={e.id} className="flex items-center gap-3 text-sm">
@@ -324,7 +331,7 @@ function Detail({ app, store, reload, close }: { app: Application; store: Store;
                   <Badge>{e.kind}</Badge>
                   <span className="min-w-0 flex-1 text-ink-700">{e.note}</span>
                   <button onClick={async () => { await api.remove('event', e.id); await reload(); }}
-                          className="text-xs text-ink-400 hover:text-rose-600">remove</button>
+                          className="text-xs text-ink-400 hover:text-rose-600">{t('remove', 'quitar')}</button>
                 </li>
               ))}
             </ul>

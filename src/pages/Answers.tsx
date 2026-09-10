@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Area, Badge, Button, Card, Empty, Field, Select, SectionTitle } from '../components/ui.tsx';
 import { api } from '../lib/api.ts';
+import { useT, useUILang } from '../lib/i18n.ts';
 import { QUESTIONS, coachText, countWords, questionText } from '../lib/questions.ts';
 import type { Answer, Lang, Store } from '../lib/types.ts';
 
@@ -9,7 +10,9 @@ import type { Answer, Lang, Store } from '../lib/types.ts';
  * genuinely demands one. The master is what you paste when a form surprises you at 11pm.
  */
 export default function Answers({ store, reload }: { store: Store; reload: () => Promise<void> }) {
-  const [lang, setLang] = useState<Lang>('en');
+  const t = useT();
+  const ui = useUILang();
+  const [lang, setLang] = useState<Lang>(ui);
   const [company, setCompany] = useState('');
   const [openSlug, setOpenSlug] = useState<string | null>(QUESTIONS[0]?.slug ?? null);
 
@@ -31,20 +34,22 @@ export default function Answers({ store, reload }: { store: Store; reload: () =>
       <Card className="flex flex-wrap items-end gap-3 p-4">
         <div>
           <p className="text-2xl font-semibold tabular-nums">{written}<span className="text-ink-400">/{QUESTIONS.length}</span></p>
-          <p className="text-xs text-ink-500">master answers written</p>
+          <p className="text-xs text-ink-500">{t('master answers written', 'respuestas base escritas')}</p>
         </div>
-        <Select label="Language" value={lang} onChange={(e) => setLang(e.target.value as Lang)} className="w-36">
+        <Select label={t('Answer language', 'Idioma de la respuesta')} value={lang} onChange={(e) => setLang(e.target.value as Lang)} className="w-36">
           <option value="en">English</option>
           <option value="es">Español</option>
         </Select>
-        <Select label="Variant for" value={company} onChange={(e) => setCompany(e.target.value)} className="w-56">
-          <option value="">Master answers (reusable)</option>
+        <Select label={t('Variant for', 'Variante para')} value={company} onChange={(e) => setCompany(e.target.value)} className="w-56">
+          <option value="">{t('Master answers (reusable)', 'Respuestas base (reutilizables)')}</option>
           {companies.map((c) => <option key={c} value={c}>{c}</option>)}
         </Select>
         <p className="max-w-md text-xs text-ink-500">
           {company
-            ? `Editing the ${company} variant. Anything you leave empty falls back to the master answer.`
-            : 'These are your reusable answers. Pick a company above to write a variant where the question needs one.'}
+            ? t(`Editing the ${company} variant. Anything you leave empty falls back to the master answer.`,
+                 `Editando la variante de ${company}. Lo que dejes vacío usa la respuesta base.`)
+            : t('These are your reusable answers. Pick a company above to write a variant where the question needs one.',
+                'Estas son tus respuestas reutilizables. Elegí una empresa arriba para escribir una variante donde haga falta.')}
         </p>
       </Card>
 
@@ -70,13 +75,15 @@ export default function Answers({ store, reload }: { store: Store; reload: () =>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-medium text-ink-900">{questionText(q, lang)}</span>
                   <span className="block truncate text-xs text-ink-500">
-                    {text.trim() ? text.slice(0, 110) : fallback.trim() ? `↳ using master answer: ${fallback.slice(0, 90)}` : 'Not written yet'}
+                    {text.trim() ? text.slice(0, 110)
+                      : fallback.trim() ? `↳ ${t('using master answer', 'usando la respuesta base')}: ${fallback.slice(0, 90)}`
+                      : t('Not written yet', 'Todavía sin escribir')}
                   </span>
                 </span>
-                {q.perFirm && <Badge tone="violet">per firm</Badge>}
+                {q.perFirm && <Badge tone="violet">{t('per firm', 'por empresa')}</Badge>}
                 {text.trim()
                   ? <Badge tone={over ? 'rose' : 'emerald'}>{words}/{limit}</Badge>
-                  : <Badge tone="slate">{limit} words</Badge>}
+                  : <Badge tone="slate">{limit} {t('words', 'palabras')}</Badge>}
               </button>
 
               {isOpen && (
@@ -111,6 +118,7 @@ function Editor({ row, slug, question, company, lang, limit, placeholder, reload
   const [text, setText] = useState(lang === 'es' ? (row?.body_es ?? '') : (row?.body ?? ''));
   const [wordLimit, setWordLimit] = useState(limit);
   const [saved, setSaved] = useState(false);
+  const t = useT();
 
   const words = countWords(text);
   const over = wordLimit > 0 && words > wordLimit;
@@ -131,25 +139,27 @@ function Editor({ row, slug, question, company, lang, limit, placeholder, reload
         rows={8}
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder={placeholder ? `Master answer (leave empty to reuse it):\n\n${placeholder}` : 'Write it once. You will paste this into a lot of forms.'}
+        placeholder={placeholder
+          ? `${t('Master answer (leave empty to reuse it)', 'Respuesta base (dejalo vacío para reusarla)')}:\n\n${placeholder}`
+          : t('Write it once. You will paste this into a lot of forms.', 'Escribila una vez. La vas a pegar en muchos formularios.')}
       />
       <div className="flex flex-wrap items-center gap-2">
         <span className={`text-sm tabular-nums ${over ? 'text-rose-600' : 'text-ink-500'}`}>
-          {words} words{wordLimit > 0 && ` / ${wordLimit}`}{over && ` — ${words - wordLimit} over`}
+          {words} {t('words', 'palabras')}{wordLimit > 0 && ` / ${wordLimit}`}{over && ` — ${words - wordLimit} ${t('over', 'de más')}`}
         </span>
         <Field type="number" value={wordLimit} min={0} onChange={(e) => setWordLimit(Number(e.target.value))}
                className="w-24" title="Word limit on the form" />
-        <Button variant="primary" disabled={!dirty} onClick={save}>{dirty ? 'Save' : 'Saved'}</Button>
-        <Button onClick={() => navigator.clipboard.writeText(text || placeholder || '')}>Copy</Button>
+        <Button variant="primary" disabled={!dirty} onClick={save}>{dirty ? t('Save', 'Guardar') : t('Saved', 'Guardado')}</Button>
+        <Button onClick={() => navigator.clipboard.writeText(text || placeholder || '')}>{t('Copy', 'Copiar')}</Button>
         {row && (
           <Button variant="ghost" onClick={async () => {
             await api.update('answer', row.id, { times_used: (row.times_used ?? 0) + 1 });
             await reload();
           }}>
-            Used it ({row.times_used ?? 0})
+            {t('Used it', 'La usé')} ({row.times_used ?? 0})
           </Button>
         )}
-        {saved && <span className="animate-fade text-sm text-brand-700">Saved</span>}
+        {saved && <span className="animate-fade text-sm text-brand-700">{t('Saved', 'Guardado')}</span>}
       </div>
     </>
   );

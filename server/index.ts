@@ -7,7 +7,7 @@ import { ATS, fetchAts, importDelimited, importLinkedInProfile, importPastedBloc
 import { applyProposal, emailConfigured, scanMailbox, type Proposal } from './email.ts';
 import { fileName, toDocx, toPdf } from './export.ts';
 import { applyParsedCV, docxToText, parseCV } from './cvimport.ts';
-import { improveBullets, keyStatus, reviewCV, translate, writeSummary, freeform } from './ai.ts';
+import { improveBullets, keyStatus, polishFields, reviewCV, translate, writeSummary, freeform } from './ai.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -141,20 +141,26 @@ app.put('/api/ai/key', (req, res) => {
 
 app.post('/api/ai/:action', async (req, res) => {
   const { action } = req.params;
+  const lang = req.body?.lang === 'es' ? 'es' : 'en';
   try {
     if (action === 'bullets') {
-      const { bullets, role, track, lang } = req.body ?? {};
+      const { bullets, role, track } = req.body ?? {};
       if (!Array.isArray(bullets) || !bullets.length) return res.status(400).json({ error: 'no bullets sent' });
-      return res.json({ suggestions: await improveBullets(bullets.slice(0, 20), { role: role ?? '', track: track ?? '', lang: lang ?? 'en' }) });
+      return res.json({ suggestions: await improveBullets(bullets.slice(0, 20), { role: role ?? '', track: track ?? '', lang }) });
     }
     if (action === 'summary') {
-      const { headline, bullets, track, lang } = req.body ?? {};
-      return res.json({ text: await writeSummary({ headline: headline ?? '', bullets: bullets ?? [], track: track ?? '', lang: lang ?? 'en' }) });
+      const { headline, bullets, track } = req.body ?? {};
+      return res.json({ text: await writeSummary({ headline: headline ?? '', bullets: bullets ?? [], track: track ?? '', lang }) });
     }
     if (action === 'review') {
       const { cv, track, jd } = req.body ?? {};
       if (!cv) return res.status(400).json({ error: 'no cv sent' });
-      return res.json({ review: await reviewCV(String(cv), { track: track ?? '', jd }) });
+      return res.json({ review: await reviewCV(String(cv), { track: track ?? '', jd, lang }) });
+    }
+    if (action === 'polish') {
+      const { fields, track } = req.body ?? {};
+      if (!Array.isArray(fields) || !fields.length) return res.status(400).json({ error: 'no fields sent' });
+      return res.json({ edits: await polishFields(fields.slice(0, 60), { track: track ?? '', lang }) });
     }
     if (action === 'translate') {
       const { text, to } = req.body ?? {};
@@ -164,7 +170,7 @@ app.post('/api/ai/:action', async (req, res) => {
     if (action === 'freeform') {
       const { prompt } = req.body ?? {};
       if (!prompt) return res.status(400).json({ error: 'no prompt sent' });
-      return res.json({ text: await freeform(String(prompt)) });
+      return res.json({ text: await freeform(String(prompt), lang) });
     }
     return res.status(404).json({ error: 'unknown action' });
   } catch (e) {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Area, Badge, Button, Card, Empty, Field, Select, SectionTitle } from '../components/ui.tsx';
 import { api, fmtDate } from '../lib/api.ts';
+import { useT, useUILang } from '../lib/i18n.ts';
 import { buildCV, matchScore } from '../lib/templates.ts';
 import { TRACKS, type Job, type Lang, type SavedSearch, type Store, type Track } from '../lib/types.ts';
 
@@ -19,8 +20,10 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
   const [total, setTotal] = useState(0);
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState(false);
+  const t = useT();
+  const ui = useUILang();
   const [track, setTrack] = useState<Track>('finance');
-  const [lang, setLang] = useState<Lang>('es');
+  const [lang, setLang] = useState<Lang>(ui);
   const [showImport, setShowImport] = useState(false);
 
   const load = useCallback(async () => {
@@ -74,19 +77,20 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
     <div className="space-y-5">
       <div className="flex flex-wrap items-end gap-3">
         <Field
-          label={'Search — terms are ANDed, "quoted phrases" stay together, -word excludes'}
-          placeholder='e.g. sales trading "buenos aires" -senior'
+          label={t('Search — every term must match, "quoted phrases" stay together, -word excludes',
+                   'Buscar — todos los términos deben coincidir, "frases entre comillas" van juntas, -palabra excluye')}
+          placeholder={t('e.g. analyst "buenos aires" -senior', 'ej. analista "buenos aires" -senior')}
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') setApplied(q); }}
           className="min-w-72 flex-1"
         />
-        <Button variant="primary" onClick={() => setApplied(q)}>Search</Button>
+        <Button variant="primary" onClick={() => setApplied(q)}>{t('Search', 'Buscar')}</Button>
         <Button onClick={() => setStarredOnly((v) => !v)} className={starredOnly ? 'text-brand-600' : ''}>
-          {starredOnly ? '★ Starred' : '☆ All'}
+          {starredOnly ? t('★ Starred', '★ Favoritos') : t('☆ All', '☆ Todos')}
         </Button>
-        <Button onClick={() => setShowDismissed((v) => !v)}>{showDismissed ? 'Hiding none' : 'Hide dismissed'}</Button>
-        <Button onClick={() => setShowImport((v) => !v)}>{showImport ? 'Close import' : 'Import jobs'}</Button>
+        <Button onClick={() => setShowDismissed((v) => !v)}>{showDismissed ? t('Showing all', 'Mostrando todo') : t('Hide dismissed', 'Ocultar descartados')}</Button>
+        <Button onClick={() => setShowImport((v) => !v)}>{showImport ? t('Close import', 'Cerrar importación') : t('Import jobs', 'Importar avisos')}</Button>
       </div>
 
       {showImport && <ImportPanel onDone={async () => { await Promise.all([load(), reload()]); }} />}
@@ -95,28 +99,29 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
 
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-4 py-2.5 text-sm">
         <span className="text-ink-500">
-          {checked.size ? `${checked.size} selected` : `${scored.length} shown of ${total}`}
+          {checked.size ? t(`${checked.size} selected`, `${checked.size} seleccionados`)
+                        : t(`${scored.length} shown of ${total}`, `${scored.length} de ${total}`)}
         </span>
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <Select value={track} onChange={(e) => setTrack(e.target.value as Track)} className="w-44">
             {TRACKS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
           </Select>
           <Select value={lang} onChange={(e) => setLang(e.target.value as Lang)} className="w-32">
-            <option value="es">CV español</option>
-            <option value="en">CV English</option>
+            <option value="es">{t('CV in Spanish', 'CV en español')}</option>
+            <option value="en">{t('CV in English', 'CV en inglés')}</option>
           </Select>
           <Button variant="primary" disabled={!checked.size || busy} onClick={generate}>
-            {busy ? 'Working…' : `Generate CV${checked.size > 1 ? ` ×${checked.size}` : ''}`}
+            {busy ? t('Working…', 'Trabajando…') : t(`Generate CV${checked.size > 1 ? ` ×${checked.size}` : ''}`, `Generar CV${checked.size > 1 ? ` ×${checked.size}` : ''}`)}
           </Button>
           <Button disabled={!checked.size || busy} onClick={() => bulk({ starred: 1 })}>★</Button>
-          <Button disabled={!checked.size || busy} onClick={() => bulk({ dismissed: 1 })}>Dismiss</Button>
+          <Button disabled={!checked.size || busy} onClick={() => bulk({ dismissed: 1 })}>{t('Dismiss', 'Descartar')}</Button>
         </div>
       </div>
 
       {scored.length === 0 ? (
         <Empty>
-          No jobs yet. Open <strong>Import jobs</strong> — paste LinkedIn’s saved-jobs export, paste a results page,
-          or pull a company’s public board straight in.
+          {t('No jobs yet. Open “Import jobs” — bring in your LinkedIn saved-jobs export, paste a results page, or pull a company’s public board straight in.',
+             'Todavía no hay avisos. Abrí “Importar avisos” — traé tu exportación de LinkedIn, pegá una página de resultados, o traé el board público de una empresa.')}
         </Empty>
       ) : (
         <Card className="overflow-hidden">
@@ -131,12 +136,12 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
                     className="accent-brand-600"
                   />
                 </th>
-                <th className="px-3 py-2 text-left font-medium">Role</th>
-                <th className="px-3 py-2 text-left font-medium">Company</th>
-                <th className="px-3 py-2 text-left font-medium">Location</th>
-                <th className="px-3 py-2 text-right font-medium">Match</th>
-                <th className="px-3 py-2 text-left font-medium">Source</th>
-                <th className="px-3 py-2 text-right font-medium">Posted</th>
+                <th className="px-3 py-2 text-left font-medium">{t('Role', 'Puesto')}</th>
+                <th className="px-3 py-2 text-left font-medium">{t('Company', 'Empresa')}</th>
+                <th className="px-3 py-2 text-left font-medium">{t('Location', 'Ubicación')}</th>
+                <th className="px-3 py-2 text-right font-medium">{t('Match', 'Afinidad')}</th>
+                <th className="px-3 py-2 text-left font-medium">{t('Source', 'Origen')}</th>
+                <th className="px-3 py-2 text-right font-medium">{t('Posted', 'Publicado')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
@@ -155,7 +160,7 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
                         ? <a href={j.url} target="_blank" rel="noreferrer" className="truncate font-medium text-ink-900 hover:text-brand-600 hover:underline">{j.title || '—'}</a>
                         : <span className="truncate font-medium text-ink-900">{j.title || '—'}</span>}
                     </div>
-                    {j.application_id && <span className="ml-6 text-[11px] text-emerald-600">in pipeline</span>}
+                    {j.application_id && <span className="ml-6 text-[11px] text-emerald-600">{t('in pipeline', 'en el tablero')}</span>}
                   </td>
                   <td className="px-3 py-2.5 text-ink-700">{j.company || '—'}</td>
                   <td className="max-w-48 truncate px-3 py-2.5 text-ink-500">{j.location || '—'}</td>
@@ -174,8 +179,8 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
       )}
 
       <p className="text-xs text-ink-400">
-        Match % is the share of a posting’s distinctive words that already appear somewhere in your master CV.
-        It ranks a long list; it does not judge a single job. A 12% match on a desk you want beats a 40% match on one you don’t.
+        {t('Match % is the share of a posting’s distinctive words that already appear in your CV. It ranks a long list; it does not judge a single job. A 12% match on a job you want beats a 40% on one you don’t.',
+           'La afinidad es el porcentaje de palabras distintivas del aviso que ya aparecen en tu CV. Sirve para ordenar una lista larga, no para juzgar un aviso. Un 12% en algo que querés vale más que un 40% en algo que no.')}
       </p>
     </div>
   );
@@ -183,6 +188,7 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
 
 function SavedSearches({ store, reload, current, apply }:
 { store: Store; reload: () => Promise<void>; current: string; apply: (terms: string) => void }) {
+  const t = useT();
   const [name, setName] = useState('');
   const saved: SavedSearch[] = store.saved_search ?? [];
 
@@ -198,14 +204,14 @@ function SavedSearches({ store, reload, current, apply }:
       ))}
       {current.trim() && (
         <div className="flex items-center gap-1">
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="save this search as…"
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('save this search as…', 'guardar esta búsqueda como…')}
                  className="w-40 rounded-full border border-dashed border-line bg-transparent px-3 py-1 text-xs outline-none placeholder:text-ink-400 focus:border-brand-400" />
           <button
             disabled={!name.trim()}
             onClick={async () => { await api.create('saved_search', { name: name.trim(), terms: current }); setName(''); await reload(); }}
             className="text-xs text-brand-600 disabled:opacity-30"
           >
-            save
+            {t('save', 'guardar')}
           </button>
         </div>
       )}
@@ -214,6 +220,7 @@ function SavedSearches({ store, reload, current, apply }:
 }
 
 function ImportPanel({ onDone }: { onDone: () => Promise<void> }) {
+  const t = useT();
   const [tab, setTab] = useState<'file' | 'paste' | 'ats' | 'profile'>('file');
   const [text, setText] = useState('');
   const [filename, setFilename] = useState('');
@@ -237,10 +244,10 @@ function ImportPanel({ onDone }: { onDone: () => Promise<void> }) {
   };
 
   const TABS = [
-    { id: 'file', label: 'LinkedIn export (CSV)' },
-    { id: 'paste', label: 'Paste a results page' },
-    { id: 'ats', label: 'Company job board' },
-    { id: 'profile', label: 'Fill Master CV from LinkedIn' },
+    { id: 'file', label: t('LinkedIn export (CSV)', 'Exportación de LinkedIn (CSV)') },
+    { id: 'paste', label: t('Paste a results page', 'Pegar resultados') },
+    { id: 'ats', label: t('Company job board', 'Board de una empresa') },
+    { id: 'profile', label: t('Fill my CV from LinkedIn', 'Llenar mi CV desde LinkedIn') },
   ] as const;
 
   return (
@@ -267,7 +274,7 @@ function ImportPanel({ onDone }: { onDone: () => Promise<void> }) {
           <Button variant="primary" disabled={busy || !text.trim()} onClick={() => run(async () => {
             const r = await api.importJobs(text, 'table', 'linkedin-export');
             return `${r.inserted} added, ${r.skipped} already there. Columns matched: ${Object.entries(r.mapped ?? {}).map(([k, v]) => `${k}→${v}`).join(', ') || 'none'}`;
-          })}>Import</Button>
+          })}>{t('Import', 'Importar')}</Button>
         </div>
       )}
 
@@ -282,7 +289,7 @@ function ImportPanel({ onDone }: { onDone: () => Promise<void> }) {
           <Button variant="primary" disabled={busy || !text.trim()} onClick={() => run(async () => {
             const r = await api.importJobs(text, 'blocks', 'paste');
             return `${r.inserted} added, ${r.skipped} already there.`;
-          })}>Import</Button>
+          })}>{t('Import', 'Importar')}</Button>
         </div>
       )}
 
@@ -304,7 +311,7 @@ function ImportPanel({ onDone }: { onDone: () => Promise<void> }) {
             <Button variant="primary" disabled={busy || !slug.trim()} onClick={() => run(async () => {
               const r = await api.fetchAts(provider, slug.trim());
               return `${r.inserted} added, ${r.skipped} already there.`;
-            })}>Fetch</Button>
+            })}>{t('Fetch', 'Traer')}</Button>
           </div>
         </div>
       )}
@@ -324,7 +331,7 @@ function ImportPanel({ onDone }: { onDone: () => Promise<void> }) {
             <Button variant="primary" disabled={busy || !text.trim() || !filename} onClick={() => run(async () => {
               const r = await api.importLinkedInProfile(filename, text);
               return `Imported ${r.imported} rows into ${r.into}.`;
-            })}>Import</Button>
+            })}>{t('Import', 'Importar')}</Button>
           </div>
           <Area rows={4} value={text} onChange={(e) => setText(e.target.value)} className="font-mono text-xs" placeholder="…or paste the CSV contents here" />
         </div>

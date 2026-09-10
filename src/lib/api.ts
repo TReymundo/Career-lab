@@ -45,12 +45,14 @@ export const api = {
   aiStatus: () => fetch('/api/ai/status').then(json) as Promise<AiStatus>,
   aiSetKey: (key: string) =>
     fetch('/api/ai/key', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key }) }).then(json) as Promise<AiStatus>,
-  aiBullets: (payload: { bullets: string[]; role?: string; track?: string; lang?: string }) =>
+  aiBullets: (payload: { bullets: string[]; role?: string; track?: string; lang: string }) =>
     post('/api/ai/bullets', payload) as Promise<{ suggestions: BulletSuggestion[] }>,
   aiSummary: (payload: { headline: string; bullets: string[]; track: string; lang: string }) =>
     post('/api/ai/summary', payload) as Promise<{ text: string }>,
-  aiReview: (payload: { cv: string; track?: string; jd?: string }) =>
+  aiReview: (payload: { cv: string; track?: string; jd?: string; lang: string }) =>
     post('/api/ai/review', payload) as Promise<{ review: AiReview }>,
+  aiPolish: (payload: { fields: FieldItem[]; track?: string; lang: string }) =>
+    post('/api/ai/polish', payload) as Promise<{ edits: FieldEdit[] }>,
   aiTranslate: (payload: { text: string; to: 'es' | 'en' }) =>
     post('/api/ai/translate', payload) as Promise<{ text: string }>,
 
@@ -81,6 +83,8 @@ export const api = {
 
 export interface AiStatus { configured: boolean; source: 'env' | 'app' | 'none'; model: string; hint: string }
 export interface BulletSuggestion { original: string; improved: string; why: string; needs: string[] }
+export interface FieldItem { target: string; label: string; value: string }
+export interface FieldEdit { target: string; label: string; from: string; to: string; why: string }
 export interface AiReview {
   verdict: string;
   strengths: string[];

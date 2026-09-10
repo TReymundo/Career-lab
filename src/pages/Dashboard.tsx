@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Badge, BarList, Card, ColumnChart, Empty, SectionTitle, Stat } from '../components/ui.tsx';
 import { daysUntil, fmtDate } from '../lib/api.ts';
+import { useT } from '../lib/i18n.ts';
 import { LIVE_STATUSES, STATUSES, TRACKS, parseBullets, statusMeta, type Store } from '../lib/types.ts';
 
 const WEEKS = 8;
@@ -31,6 +32,7 @@ const ts = (iso: string) => {
 };
 
 export default function Dashboard({ store }: { store: Store }) {
+  const t = useT();
   const live = store.application.filter((a) => LIVE_STATUSES.includes(a.status));
   const interviewing = store.application.filter((a) => a.status === 'interviewing' || a.status === 'offer');
   const applied = store.application.filter((a) => a.applied_on);
@@ -72,17 +74,17 @@ export default function Dashboard({ store }: { store: Store }) {
   const due = [
     ...store.application
       .filter((a) => a.next_action_on && LIVE_STATUSES.includes(a.status))
-      .map((a) => ({ when: a.next_action_on, what: a.next_action || 'Next step', who: `${a.company} — ${a.role}`, to: '/pipeline' })),
+      .map((a) => ({ when: a.next_action_on, what: a.next_action || t('Next step', 'Próximo paso'), who: `${a.company} — ${a.role}`, to: '/pipeline' })),
     ...store.application
       .filter((a) => a.deadline && ['saved', 'tailored'].includes(a.status))
-      .map((a) => ({ when: a.deadline, what: 'Application deadline', who: `${a.company} — ${a.role}`, to: '/pipeline' })),
+      .map((a) => ({ when: a.deadline, what: t('Application deadline', 'Cierre de la postulación'), who: `${a.company} — ${a.role}`, to: '/pipeline' })),
     ...store.contact
       .filter((c) => c.next_touch)
-      .map((c) => ({ when: c.next_touch, what: 'Follow up', who: `${c.name}${c.company ? ` · ${c.company}` : ''}`, to: '/contacts' })),
+      .map((c) => ({ when: c.next_touch, what: t('Follow up', 'Volver a escribir'), who: `${c.name}${c.company ? ` · ${c.company}` : ''}`, to: '/contacts' })),
   ].sort((a, b) => a.when.localeCompare(b.when)).slice(0, 7);
 
   const funnel = STATUSES.map((s) => ({
-    label: s.label,
+    label: t(s.label, s.es),
     value: store.application.filter((a) => a.status === s.id).length,
   })).filter((s) => s.value > 0);
 
@@ -92,35 +94,41 @@ export default function Dashboard({ store }: { store: Store }) {
   return (
     <div className="space-y-8">
       <div className="stagger grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Live processes" value={live.length} />
-        <Stat label="At interview or offer" value={interviewing.length} hint={applied.length ? `${interviewRate}% of sent` : undefined} />
-        <Stat label="Response rate" value={`${responseRate}%`} hint={`${responded.length}/${applied.length}`} tone={responseRate >= 20 ? 'emerald' : 'amber'} />
-        <Stat label="Applications / week" value={velocity} hint="last 4 wks" tone="sky" />
+        <Stat label={t('Live processes', 'Procesos activos')} value={live.length} />
+        <Stat label={t('At interview or offer', 'En entrevista u oferta')} value={interviewing.length}
+              hint={applied.length ? t(`${interviewRate}% of sent`, `${interviewRate}% de las enviadas`) : undefined} />
+        <Stat label={t('Response rate', 'Tasa de respuesta')} value={`${responseRate}%`} hint={`${responded.length}/${applied.length}`}
+              tone={responseRate >= 20 ? 'emerald' : 'amber'} />
+        <Stat label={t('Applications / week', 'Postulaciones por semana')} value={velocity} hint={t('last 4 wks', 'últimas 4 sem')} tone="sky" />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
         <Card className="p-5">
-          <SectionTitle right={<span className="text-xs text-ink-400">last {WEEKS} weeks</span>}>Applications sent</SectionTitle>
+          <SectionTitle right={<span className="text-xs text-ink-400">{t(`last ${WEEKS} weeks`, `últimas ${WEEKS} semanas`)}</span>}>
+            {t('Applications sent', 'Postulaciones enviadas')}
+          </SectionTitle>
           {weeks.every((w) => w.value === 0) ? (
-            <Empty>Nothing sent yet. A row only counts here once it has an “applied on” date.</Empty>
+            <Empty>{t('Nothing sent yet. A row only counts here once it has an “applied on” date.',
+                          'Todavía no enviaste nada. Una fila cuenta acá recién cuando tiene fecha de postulación.')}</Empty>
           ) : (
             <ColumnChart rows={weeks} height={130} />
           )}
         </Card>
 
         <Card className="p-5">
-          <SectionTitle>Funnel</SectionTitle>
-          {funnel.length === 0 ? <Empty>No applications yet.</Empty> : <BarList rows={funnel} />}
+          <SectionTitle>{t('Funnel', 'Embudo')}</SectionTitle>
+          {funnel.length === 0 ? <Empty>{t('No applications yet.', 'Todavía no hay postulaciones.')}</Empty> : <BarList rows={funnel} />}
         </Card>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
         <div>
-          <SectionTitle right={<Link to="/pipeline" className="text-xs text-brand-600 hover:underline">Pipeline →</Link>}>
-            What’s due
+          <SectionTitle right={<Link to="/pipeline" className="text-xs text-brand-600 hover:underline">{t('Pipeline →', 'Tablero →')}</Link>}>
+            {t('What’s due', 'Qué vence')}
           </SectionTitle>
           {due.length === 0 ? (
-            <Empty>Nothing scheduled. Give your live applications a next action with a date.</Empty>
+            <Empty>{t('Nothing scheduled. Give your live applications a next action with a date.',
+                          'Nada agendado. Ponele a cada postulación activa una próxima acción con fecha.')}</Empty>
           ) : (
             <Card className="stagger divide-y divide-line overflow-hidden">
               {due.map((d, i) => {
@@ -133,7 +141,7 @@ export default function Dashboard({ store }: { store: Store }) {
                       <div className="truncate text-sm text-ink-900">{d.what}</div>
                       <div className="truncate text-xs text-ink-500">{d.who}</div>
                     </div>
-                    <Badge tone={tone}>{n === null ? '—' : n < 0 ? `${-n}d late` : n === 0 ? 'today' : `in ${n}d`}</Badge>
+                    <Badge tone={tone}>{n === null ? '—' : n < 0 ? t(`${-n}d late`, `${-n}d tarde`) : n === 0 ? t('today', 'hoy') : t(`in ${n}d`, `en ${n}d`)}</Badge>
                   </Link>
                 );
               })}
@@ -143,13 +151,14 @@ export default function Dashboard({ store }: { store: Store }) {
 
         <div className="space-y-6">
           <Card className="p-5">
-            <SectionTitle>Live by track</SectionTitle>
-            {byTrack.length === 0 ? <Empty>Tag your applications by track.</Empty> : <BarList rows={byTrack} />}
+            <SectionTitle>{t('Live by area', 'Activos por área')}</SectionTitle>
+            {byTrack.length === 0 ? <Empty>{t('Tag your applications by track.', 'Etiquetá tus postulaciones por área.')}</Empty> : <BarList rows={byTrack} />}
           </Card>
           <Card className="p-5">
-            <SectionTitle>Your skills, as the market asks for them</SectionTitle>
+            <SectionTitle>{t('Your skills, as the market asks for them', 'Tus habilidades, como las pide el mercado')}</SectionTitle>
             {topKeywords.length === 0 ? (
-              <Empty>Paste job descriptions onto your applications to see which of your skills the market keeps naming.</Empty>
+              <Empty>{t('Paste job descriptions onto your applications to see which of your skills the market keeps naming.',
+                            'Pegá descripciones de avisos en tus postulaciones para ver qué habilidades tuyas nombra el mercado.')}</Empty>
             ) : (
               <BarList rows={topKeywords} unit="×" />
             )}
@@ -158,9 +167,10 @@ export default function Dashboard({ store }: { store: Store }) {
       </div>
 
       <section>
-        <SectionTitle>Recent activity</SectionTitle>
+        <SectionTitle>{t('Recent activity', 'Actividad reciente')}</SectionTitle>
         {store.event.length === 0 ? (
-          <Empty>Log calls, coffee chats and interviews — the trail is what you reread before a final round.</Empty>
+          <Empty>{t('Log calls, coffee chats and interviews — the trail is what you reread before a final round.',
+                        'Anotá llamadas, cafés y entrevistas — ese historial es lo que releés antes de una ronda final.')}</Empty>
         ) : (
           <Card className="stagger divide-y divide-line overflow-hidden">
             {store.event.slice(0, 7).map((e) => {
