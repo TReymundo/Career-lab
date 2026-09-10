@@ -72,9 +72,48 @@ body {
   animation: shimmer 1.4s infinite;
 }
 
+/* --- The CV reveal: the sheet arrives like a printed page, then a short burst of colour. --- */
+@keyframes sheet-in {
+  0%   { opacity: 0; transform: perspective(1200px) rotateX(9deg) translateY(26px) scale(.965); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: perspective(1200px) rotateX(0) translateY(0) scale(1); }
+}
+@keyframes confetti-fall {
+  0%   { opacity: 0; transform: translateY(-8vh) rotate(0deg); }
+  12%  { opacity: 1; }
+  100% { opacity: 0; transform: translateY(85vh) rotate(520deg); }
+}
+@keyframes sheen {
+  0%   { transform: translateX(-120%) skewX(-18deg); }
+  100% { transform: translateX(320%) skewX(-18deg); }
+}
+
+.sheet { position: relative; overflow: hidden; }
+.sheet-in { animation: sheet-in .75s cubic-bezier(.19,1,.22,1) both; }
+/* A single light sweep across the page once it has settled. */
+.sheet-in::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / .75), transparent);
+  animation: sheen 1.1s cubic-bezier(.4,0,.2,1) .55s both;
+  pointer-events: none;
+}
+.confetti {
+  position: absolute;
+  top: -6vh;
+  width: 8px;
+  height: 12px;
+  border-radius: 2px;
+  animation: confetti-fall 1.7s cubic-bezier(.3,.6,.5,1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .card-hover:hover { transform: none; }
+  .confetti { display: none; }
+  .sheet-in { opacity: 1; }
 }
 
 /* Printing a document view should yield a clean A4 page, not a screenshot of the app. */

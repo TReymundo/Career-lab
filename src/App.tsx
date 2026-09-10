@@ -3,6 +3,7 @@ import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { useStore } from './lib/api.ts';
 import { setUILang, useT, useUILang } from './lib/i18n.ts';
 import { parseBullets, type Store } from './lib/types.ts';
+import { ToastHost } from './components/Toast.tsx';
 import Landing from './pages/Landing.tsx';
 import Start from './pages/Start.tsx';
 import Dashboard from './pages/Dashboard.tsx';
@@ -115,6 +116,7 @@ export default function App() {
 
   return (
     <div className="flex min-h-full">
+      <ToastHost />
       <aside className="no-print sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-line bg-surface md:flex">
         <NavLink to="/" className="flex items-center gap-2 px-5 py-5 transition hover:opacity-80">
           <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand-600 text-sm font-bold text-white">CL</span>

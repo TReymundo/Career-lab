@@ -5,7 +5,8 @@ import { api, type BulletSuggestion, type FieldEdit, type FieldItem } from '../l
 import { useT, useUILang } from '../lib/i18n.ts';
 import { buildCV } from '../lib/templates.ts';
 import { TRACKS, parseBullets, type Experience, type ParsedCV, type Store, type Track } from '../lib/types.ts';
-import JobFinder from '../components/JobFinder.tsx';
+import CVReveal from '../components/CVReveal.tsx';
+import { toast } from '../components/Toast.tsx';
 
 /**
  * One path, top to bottom. Each step does its own work inline and ticks itself off when you
@@ -188,6 +189,7 @@ const ALL_STEPS = PHASES.flatMap((p) => p.steps);
 
 export default function Start({ store, reload }: { store: Store; reload: () => Promise<void> }) {
   const [openId, setOpenId] = useState<string | null>(null);
+  const [reveal, setReveal] = useState(false);
   const t = useT();
   const lang = useUILang();
 
@@ -199,6 +201,29 @@ export default function Start({ store, reload }: { store: Store; reload: () => P
   const doneCount = state.filter((s) => s.done).length;
 
   const done = (id: string) => { void api.setSetting(`step:${id}`, 'done').then(reload); };
+
+  /**
+   * The CV phase finishing is the one genuine milestone in setup: it is the moment the app
+   * has produced something the user can hold. It is announced once and never again.
+   */
+  const cvPhase = PHASES.find((p) => p.id === 'cv');
+  const cvDone = Boolean(cvPhase?.steps.every((s) => store.setting[`step:${s.id}`] === 'done' || s.auto?.(store)));
+  const alreadyCelebrated = store.setting['celebrated:cv'] === 'done';
+
+  // React runs effects twice in development; without this the announcement arrives twice.
+  const announced = useRef(false);
+
+  useEffect(() => {
+    if (!cvDone || alreadyCelebrated || announced.current) return;
+    announced.current = true;
+    setReveal(true);
+    void api.setSetting('celebrated:cv', 'done').then(reload);
+    toast(
+      t('Jobs unlocked', 'Avisos desbloqueado'),
+      t('A new section opened in the sidebar. That is where the AI looks for openings that match your CV.',
+        'Se abrió una sección nueva en el menú. Ahí la IA busca avisos que coincidan con tu CV.'),
+    );
+  }, [cvDone, alreadyCelebrated]);
   const next = () => {
     const i = ALL_STEPS.findIndex((s) => s.id === active);
     setOpenId(ALL_STEPS[i + 1]?.id ?? null);
@@ -207,6 +232,8 @@ export default function Start({ store, reload }: { store: Store; reload: () => P
 
   return (
     <div className="space-y-6">
+      {reveal && <CVReveal store={store} onClose={() => setReveal(false)} />}
+
       <Card className="p-5">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -218,9 +245,14 @@ export default function Start({ store, reload }: { store: Store; reload: () => P
                  'Esta pantalla es sólo sobre vos y tu CV. Buscar avisos, postularte y hacer seguimiento tienen su propia pantalla, y se abren cuando llegás.')}
             </p>
           </div>
-          {doneCount === ALL_STEPS.length && (
-            <Link to="/jobs"><Button variant="primary">{t('Setup done → find jobs', 'Listo → buscar avisos')}</Button></Link>
-          )}
+          <div className="flex flex-wrap gap-2">
+            {cvDone && (
+              <Button onClick={() => setReveal(true)}>{t('See my CV', 'Ver mi CV')}</Button>
+            )}
+            {doneCount === ALL_STEPS.length && (
+              <Link to="/jobs"><Button variant="primary">{t('Setup done → find jobs', 'Listo → buscar avisos')}</Button></Link>
+            )}
+          </div>
         </div>
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-sunken">
           <div className="h-full rounded-full bg-brand-500 transition-all duration-500" style={{ width: `${(doneCount / ALL_STEPS.length) * 100}%` }} />
