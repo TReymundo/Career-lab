@@ -378,3 +378,47 @@ ${text.slice(0, 12000)}`;
 
   return json<ExtractedJob[]>(prompt, { system: houseRules(lang), schema: EXTRACT_SCHEMA });
 }
+
+/**
+ * Tailors the CV to one specific posting.
+ *
+ * It may only rearrange and re-emphasise what the CV already contains, plus name the company
+ * and the role — those are facts from the posting. It may not add an achievement, a skill or
+ * an interest the person never claimed.
+ */
+export interface Adaptation {
+  summary: string;
+  lead: string[];
+  why: string;
+}
+
+const ADAPT_SCHEMA: Schema = {
+  type: 'object',
+  properties: {
+    summary: { type: 'string' },
+    lead: { type: 'array', items: { type: 'string' } },
+    why: { type: 'string' },
+  },
+  required: ['summary', 'lead', 'why'],
+};
+
+export async function adaptCV(input: {
+  cv: string; company: string; role: string; jd: string; lang: Lang;
+}) {
+  const prompt = `Tailor this person's CV to one specific job.
+
+The job: ${input.role} at ${input.company}
+${input.jd ? `The posting says:\n${input.jd.slice(0, 2500)}\n` : '(No posting text was saved, so work from the job title and company alone.)'}
+
+Their CV:
+${input.cv.slice(0, 5000)}
+
+Return:
+- "summary": a profile paragraph of at most 45 words for the top of the CV, written for this job. It may name ${input.company} and the role. Every claim in it must already appear in the CV above. If the CV is thin, keep it short and honest rather than padding it.
+- "lead": the two or three lines from their CV, copied word for word, that this employer should see first.
+- "why": one sentence on what you emphasised and why, addressed to the candidate.
+
+Invent nothing. No skill, tool, number or interest that is not already in the CV.`;
+
+  return json<Adaptation>(prompt, { system: houseRules(input.lang), schema: ADAPT_SCHEMA });
+}

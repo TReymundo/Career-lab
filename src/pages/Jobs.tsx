@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Area, Badge, Button, Card, Empty, Field, Select, SectionTitle } from '../components/ui.tsx';
-import { api, fmtDate } from '../lib/api.ts';
+import { api, today } from '../lib/api.ts';
 import { useT, useUILang } from '../lib/i18n.ts';
 import JobFinder from '../components/JobFinder.tsx';
 import Guide from '../components/Guide.tsx';
+import JobGrid from '../components/JobGrid.tsx';
+import { toast } from '../components/Toast.tsx';
 import { buildCV, matchScore } from '../lib/templates.ts';
 import { TRACKS, type Job, type Lang, type SavedSearch, type Store, type Track } from '../lib/types.ts';
 
@@ -28,6 +30,8 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
   const [lang, setLang] = useState<Lang>(ui);
   const [showImport, setShowImport] = useState(false);
   const [autoOpened, setAutoOpened] = useState(false);
+  const [adapting, setAdapting] = useState<number | null>(null);
+  const [note, setNote] = useState('');
 
   const load = useCallback(async () => {
     const res = await api.searchJobs({ q: applied, starred: starredOnly, dismissed: showDismissed, limit: 500 });
@@ -71,6 +75,49 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
     setBusy(false);
     setChecked(new Set());
     if (ids.length) navigate(`/documents?apps=${ids.join(',')}&lang=${lang}&track=${track}`);
+  };
+
+  /**
+    * One job in, a CV written for it out. The posting becomes an application, the AI rewrites
+    * the profile paragraph around this employer using only what the CV already claims, and the
+    * result is filed under Documents.
+    */
+  const adapt = async (job: Job) => {
+    setAdapting(job.id);
+    setNote('');
+    try {
+      const { application_id } = await api.promote(job.id, track);
+      const base = buildCV(store.profile, store.experience, { track, lang, template: 'ats' });
+      const { adaptation } = await api.aiAdapt({
+        cv: base, company: job.company, role: job.title, jd: job.description, lang,
+      });
+
+      const heading = lang === 'es' ? 'Perfil' : 'Profile';
+      const hasProfile = new RegExp(`## ${heading}`).test(base);
+      const tailored = hasProfile
+        ? base.replace(new RegExp(`(## ${heading}\\n\\n)([^\\n]*)`), `$1${adaptation.summary}`)
+        : base.replace(/\n\n/, `\n\n## ${heading}\n\n${adaptation.summary}\n\n`);
+
+      await api.create('document', {
+        application_id,
+        kind: 'cv',
+        title: `CV — ${job.company} — ${job.title}`.slice(0, 120),
+        body: tailored,
+      });
+      await api.update('application', application_id, { status: 'tailored', jd: job.description });
+      await api.update('job', job.id, { tailored_at: today() });
+
+      await Promise.all([load(), reload()]);
+      setNote(adaptation.why);
+      toast(
+        t(`CV adapted for ${job.company}`, `CV adaptado para ${job.company}`),
+        t('It is filed under Documents, and the job moved onto your board as Tailored.',
+          'Quedó guardado en Documentos, y el aviso pasó a tu tablero como Adaptado.'),
+      );
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e));
+    }
+    setAdapting(null);
   };
 
   const bulk = async (body: Partial<Job>) => {
@@ -123,10 +170,18 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
       <SavedSearches store={store} reload={reload} current={q} apply={(t) => { setQ(t); setApplied(t); }} />
 
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-4 py-2.5 text-sm">
-        <span className="text-ink-500">
-          {checked.size ? t(`${checked.size} selected`, `${checked.size} seleccionados`)
-                        : t(`${scored.length} shown of ${total}`, `${scored.length} de ${total}`)}
-        </span>
+        <label className="flex cursor-pointer items-center gap-2 text-ink-700">
+          <input
+            type="checkbox"
+            className="accent-brand-600"
+            checked={checked.size > 0 && checked.size === scored.length}
+            ref={(el) => { if (el) el.indeterminate = checked.size > 0 && checked.size < scored.length; }}
+            onChange={(e) => setChecked(e.target.checked ? new Set(scored.map((j) => j.id)) : new Set())}
+          />
+          {checked.size ? t(`${checked.size} selected`, `${checked.size} seleccionados`) : t('Select all', 'Seleccionar todo')}
+        </label>
+        <span className="text-ink-400">·</span>
+        <span className="text-ink-500">{t(`${scored.length} of ${total}`, `${scored.length} de ${total}`)}</span>
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <Select value={track} onChange={(e) => setTrack(e.target.value as Track)} className="w-44">
             {TRACKS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
@@ -143,66 +198,18 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
         </div>
       </div>
 
-      {scored.length === 0 ? (
-        <Empty>
-          {t('No jobs yet. Open “Import jobs” — bring in your LinkedIn saved-jobs export, paste a results page, or pull a company’s public board straight in.',
-             'Todavía no hay avisos. Abrí “Importar avisos” — traé tu exportación de LinkedIn, pegá una página de resultados, o traé el board público de una empresa.')}
-        </Empty>
-      ) : (
-        <Card className="overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-sunken text-[11px] uppercase tracking-wider text-ink-500">
-              <tr>
-                <th className="w-8 px-3 py-2">
-                  <input
-                    type="checkbox"
-                    checked={checked.size > 0 && checked.size === scored.length}
-                    onChange={(e) => setChecked(e.target.checked ? new Set(scored.map((j) => j.id)) : new Set())}
-                    className="accent-brand-600"
-                  />
-                </th>
-                <th className="px-3 py-2 text-left font-medium">{t('Role', 'Puesto')}</th>
-                <th className="px-3 py-2 text-left font-medium">{t('Company', 'Empresa')}</th>
-                <th className="px-3 py-2 text-left font-medium">{t('Location', 'Ubicación')}</th>
-                <th className="px-3 py-2 text-right font-medium">{t('Match', 'Afinidad')}</th>
-                <th className="px-3 py-2 text-left font-medium">{t('Source', 'Origen')}</th>
-                <th className="px-3 py-2 text-right font-medium">{t('Posted', 'Publicado')}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {scored.map((j) => (
-                <tr key={j.id} className={`hover:bg-brand-50 ${checked.has(j.id) ? 'bg-brand-50' : ''} ${j.dismissed ? 'opacity-45' : ''}`}>
-                  <td className="px-3 py-2.5">
-                    <input type="checkbox" checked={checked.has(j.id)} onChange={() => toggle(j.id)} className="accent-brand-600" />
-                  </td>
-                  <td className="max-w-80 px-3 py-2.5">
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => patchJob(j.id, { starred: j.starred ? 0 : 1 })}
-                              className={j.starred ? 'text-brand-600' : 'text-ink-400 hover:text-brand-600'}>
-                        {j.starred ? '★' : '☆'}
-                      </button>
-                      {j.url
-                        ? <a href={j.url} target="_blank" rel="noreferrer" className="truncate font-medium text-ink-900 hover:text-brand-600 hover:underline">{j.title || '—'}</a>
-                        : <span className="truncate font-medium text-ink-900">{j.title || '—'}</span>}
-                    </div>
-                    {j.application_id && <span className="ml-6 text-[11px] text-emerald-600">{t('in pipeline', 'en el tablero')}</span>}
-                  </td>
-                  <td className="px-3 py-2.5 text-ink-700">{j.company || '—'}</td>
-                  <td className="max-w-48 truncate px-3 py-2.5 text-ink-500">{j.location || '—'}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">
-                    <span className={j.score >= 25 ? 'text-emerald-600' : j.score >= 15 ? 'text-amber-600' : 'text-ink-500'}>
-                      {j.score}%
-                    </span>
-                  </td>
-                  <td className="px-3 py-2.5"><Badge tone={SOURCE_TONE[j.source] ?? 'slate'}>{j.source}</Badge></td>
-                  <td className="px-3 py-2.5 text-right text-xs tabular-nums text-ink-500">{j.posted_on ? fmtDate(j.posted_on) : '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
+      {note && (
+        <p className="animate-fade rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-900">{note}</p>
       )}
 
+      <JobGrid
+        rows={scored}
+        checked={checked}
+        setChecked={setChecked}
+        onStar={(j) => patchJob(j.id, { starred: j.starred ? 0 : 1 })}
+        onAdapt={adapt}
+        adapting={adapting}
+      />
       <p className="text-xs text-ink-400">
         {t('Match % is the share of a posting’s distinctive words that already appear in your CV. It ranks a long list; it does not judge a single job. A 12% match on a job you want beats a 40% on one you don’t.',
            'La afinidad es el porcentaje de palabras distintivas del aviso que ya aparecen en tu CV. Sirve para ordenar una lista larga, no para juzgar un aviso. Un 12% en algo que querés vale más que un 40% en algo que no.')}

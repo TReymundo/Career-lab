@@ -60,48 +60,100 @@ export function parseDelimited(text: string, delimiter?: string): string[][] {
 
 const FIELD_ALIASES: Record<keyof IncomingJob, string[]> = {
   source: [],
-  external_id: ['job id', 'id', 'posting id'],
+  external_id: ['job id', 'jobid', 'posting id', 'requisition id'],
   company: ['company name', 'company', 'employer', 'organisation', 'organization', 'empresa'],
   title: ['job title', 'title', 'position', 'role', 'puesto', 'cargo'],
-  location: ['location', 'job location', 'city', 'ubicaci', 'ciudad'],
+  location: ['location', 'job location', 'city', 'ubicacion', 'ubicación', 'ciudad'],
   url: ['job url', 'url', 'link', 'job link', 'posting url', 'enlace'],
-  posted_on: ['posted', 'date', 'saved date', 'application date', 'fecha'],
-  description: ['description', 'job description', 'descripci'],
+  posted_on: ['posted', 'posted on', 'date', 'saved date', 'application date', 'fecha'],
+  description: ['description', 'job description', 'descripcion', 'descripción'],
 };
 
-/**
- * Maps a header row onto our fields by fuzzy name. Works with LinkedIn's own
- * "Saved Jobs.csv" / "Job Applications.csv" exports and with any spreadsheet
- * you assemble yourself, without needing an exact column order.
- */
-export function importDelimited(text: string, source = 'linkedin-export') {
-  const rows = parseDelimited(text);
-  if (rows.length < 2) return { inserted: 0, skipped: 0, mapped: {} as Record<string, string> };
+const normaliseHeader = (h: string) => h.trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
 
-  const header = rows[0].map((h) => h.trim().toLowerCase());
+/**
+ * Exact match first, then whole-word containment. Substring matching was too eager: a
+ * "SAVED_SEARCH_ID" column was being read as the job id, which is how an import of the wrong
+ * file quietly reported "0 added" instead of saying what was wrong.
+ */
+function matchColumn(header: string[], aliases: string[]): number {
+  const norm = header.map(normaliseHeader);
+  for (const alias of aliases) {
+    const at = norm.indexOf(alias);
+    if (at >= 0) return at;
+  }
+  for (const alias of aliases) {
+    const at = norm.findIndex((h) => new RegExp(`(^| )${alias}( |$)`).test(h));
+    if (at >= 0) return at;
+  }
+  return -1;
+}
+
+export interface ImportResult {
+  inserted: number;
+  skipped: number;
+  mapped: Record<string, string>;
+  error?: string;
+}
+
+/**
+ * Maps a header row onto our fields by name. Works with LinkedIn's own "Saved Jobs.csv" and
+ * "Job Applications.csv" exports and with any spreadsheet you assemble yourself, without
+ * needing an exact column order.
+ */
+export function importDelimited(text: string, source = 'linkedin-export'): ImportResult {
+  const rows = parseDelimited(text);
+  if (rows.length < 2) {
+    return { inserted: 0, skipped: 0, mapped: {}, error: 'That file has no rows under its header.' };
+  }
+
+  const header = rows[0];
   const index: Partial<Record<keyof IncomingJob, number>> = {};
   const mapped: Record<string, string> = {};
 
   for (const [field, aliases] of Object.entries(FIELD_ALIASES) as [keyof IncomingJob, string[]][]) {
-    const at = header.findIndex((h) => aliases.some((a) => h.includes(a)));
-    if (at >= 0) { index[field] = at; mapped[rows[0][at]] = field; }
-  }
-  if (index.company === undefined && index.title === undefined) {
-    return { inserted: 0, skipped: rows.length - 1, mapped };
+    if (!aliases.length) continue;
+    const at = matchColumn(header, aliases);
+    if (at >= 0) { index[field] = at; mapped[header[at]] = field; }
   }
 
-  const pick = (r: string[], f: keyof IncomingJob) => (index[f] !== undefined ? (r[index[f]!] ?? '') : '');
-  const jobs = rows.slice(1).map((r) => ({
-    source,
-    external_id: pick(r, 'external_id'),
-    company: pick(r, 'company'),
-    title: pick(r, 'title'),
-    location: pick(r, 'location'),
-    url: pick(r, 'url'),
-    posted_on: pick(r, 'posted_on').slice(0, 10),
-    description: pick(r, 'description'),
-  }));
-  return { ...insertJobs(jobs), mapped };
+  // Without a company or a title there is no job here, whatever else the file contains.
+  if (index.company === undefined && index.title === undefined) {
+    const looksLikeSearches = header.some((h) => /search/i.test(h));
+    return {
+      inserted: 0,
+      skipped: rows.length - 1,
+      mapped,
+      error: looksLikeSearches
+        ? 'That is “Saved Job Searches.csv”, which holds your saved search filters rather than any jobs. The file you want from the same archive is “Saved Jobs.csv” or “Job Applications.csv”.'
+        : `No company or job-title column found. Its columns are: ${header.slice(0, 8).join(', ')}. The importer needs one column named something like “Company Name” and one like “Job Title”.`,
+    };
+  }
+
+  const pick = (r: string[], f: keyof IncomingJob) => (index[f] !== undefined ? (r[index[f]!] ?? '').trim() : '');
+
+  const jobs = rows.slice(1)
+    .map((r) => ({
+      source,
+      external_id: pick(r, 'external_id'),
+      company: pick(r, 'company'),
+      title: pick(r, 'title'),
+      location: pick(r, 'location'),
+      url: pick(r, 'url'),
+      posted_on: pick(r, 'posted_on').slice(0, 10),
+      description: pick(r, 'description'),
+    }))
+    // A row with neither is blank padding, not a job that happens to be a duplicate.
+    .filter((j) => j.company || j.title);
+
+  const result = insertJobs(jobs);
+  return {
+    ...result,
+    mapped,
+    error: result.inserted === 0 && jobs.length === 0
+      ? 'Every row was empty once the columns were matched. Check you exported the right file.'
+      : undefined,
+  };
 }
 
 /**

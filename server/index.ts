@@ -5,9 +5,10 @@ import { existsSync } from 'node:fs';
 import { db, dbPath } from './db.ts';
 import { ATS, fetchAts, importDelimited, importLinkedInProfile, importPastedBlocks, insertJobs } from './jobs.ts';
 import { applyProposal, emailConfigured, scanMailbox, type Proposal } from './email.ts';
+import { FEEDS, pullJobs, type FeedId } from './feeds.ts';
 import { fileName, toDocx, toPdf } from './export.ts';
 import { applyParsedCV, docxToText, parseCV } from './cvimport.ts';
-import { extractJobs, improveBullets, keyStatus, polishFields, reviewCV, suggestSources, translate, writeSummary, freeform } from './ai.ts';
+import { adaptCV, extractJobs, improveBullets, keyStatus, polishFields, reviewCV, suggestSources, translate, writeSummary, freeform } from './ai.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -24,7 +25,7 @@ const TABLES = {
   contact: ['application_id','name','company','role','email','linkedin','how_met','last_touch','next_touch','notes'],
   event: ['application_id', 'on_date', 'kind', 'note'],
   document: ['application_id', 'kind', 'title', 'body'],
-  job: ['source','external_id','company','title','location','url','posted_on','description','track','starred','dismissed','application_id'],
+  job: ['source','external_id','company','title','location','url','posted_on','description','track','category','starred','dismissed','application_id','tailored_at'],
   saved_search: ['name', 'terms', 'exclude'],
   answer: ['slug','question','body','body_es','word_limit','company','track','times_used'],
 } as const;
@@ -172,6 +173,11 @@ app.post('/api/ai/:action', async (req, res) => {
       const jobs = await extractJobs(String(text), lang);
       return res.json({ jobs, ...insertJobs(jobs.map((j) => ({ ...j, source: 'ai' }))) });
     }
+    if (action === 'adapt') {
+      const { cv, company, role, jd } = req.body ?? {};
+      if (!cv || !company) return res.status(400).json({ error: 'cv and company required' });
+      return res.json({ adaptation: await adaptCV({ cv, company, role: role ?? '', jd: jd ?? '', lang }) });
+    }
     if (action === 'translate') {
       const { text, to } = req.body ?? {};
       if (!text) return res.status(400).json({ error: 'no text sent' });
@@ -291,6 +297,21 @@ app.get('/api/jobs/search', (req, res) => {
   const rows = db.prepare(`SELECT * FROM job ${clause} ORDER BY ${ORDER.job} LIMIT ? OFFSET ?`)
     .all(...params, limit, offset);
   res.json({ total, rows });
+});
+
+/** Bulk acquisition: many searches across many open feeds, in one press. */
+app.get('/api/jobs/feeds', (_req, res) => res.json({ feeds: FEEDS }));
+
+app.post('/api/jobs/pull', async (req, res) => {
+  const queries = Array.isArray(req.body?.queries) ? (req.body.queries as string[]).slice(0, 12) : [];
+  const feeds = Array.isArray(req.body?.feeds) && req.body.feeds.length
+    ? (req.body.feeds as FeedId[])
+    : FEEDS.map((f) => f.id);
+  try {
+    res.json(await pullJobs(queries, feeds));
+  } catch (e) {
+    res.status(502).json({ error: e instanceof Error ? e.message : String(e) });
+  }
 });
 
 app.post('/api/jobs/import', (req, res) => {

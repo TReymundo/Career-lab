@@ -39,6 +39,26 @@ export default function JobFinder({ store, onDone }: { store: Store; onDone: () 
     setBusy('');
   };
 
+  /**
+   * The point of the recommendations: they do not just tell you where to look, they go and
+   * fetch. Every suggested search is run against the open job feeds and everything real that
+   * comes back is filed.
+   */
+  const pullAll = async (queries: string[]) => {
+    setBusy('pull'); setErr(''); setMsg('');
+    try {
+      const r = await api.pullJobs(queries);
+      const feeds = r.perFeed.filter((f) => f.fetched > 0).map((f) => f.feed).join(', ');
+      setMsg(r.inserted > 0
+        ? t(`${r.inserted} jobs saved (${r.fetched} found, ${r.skipped} already had). From ${feeds}.`,
+            `${r.inserted} avisos guardados (${r.fetched} encontrados, ${r.skipped} ya estaban). Desde ${feeds}.`)
+        : t(`Nothing new — all ${r.fetched} were already in your list.`,
+            `Nada nuevo — los ${r.fetched} ya estaban en tu lista.`));
+      await onDone();
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    setBusy('');
+  };
+
   const extract = async () => {
     setBusy('extract'); setErr(''); setMsg('');
     try {
@@ -114,9 +134,17 @@ export default function JobFinder({ store, onDone }: { store: Store; onDone: () 
             className="min-w-64 flex-1"
           />
           <Button variant="primary" disabled={busy !== ''} onClick={suggest}>
-            {busy === 'plan' ? t('Thinking…', 'Pensando…') : t('Suggest where to look', 'Sugerir dónde buscar')}
+            {busy === 'plan' ? t('Thinking…', 'Pensando…') : t('Plan my search', 'Planificar mi búsqueda')}
+          </Button>
+          <Button variant="soft" disabled={busy !== ''}
+                  onClick={() => pullAll(keywords.trim() ? keywords.split(/[,;]/).map((k) => k.trim()) : [tracks || 'analyst'])}>
+            {busy === 'pull' ? t('Pulling…', 'Trayendo…') : t('Just get me jobs now', 'Traeme avisos ya')}
           </Button>
         </div>
+        <p className="mt-2 text-xs text-ink-500">
+          {t('“Just get me jobs now” skips the planning and pulls straight from the open job feeds — usually a few hundred at once.',
+             '“Traeme avisos ya” salta la planificación y trae directo de los feeds abiertos — normalmente unos cientos de una.')}
+        </p>
       </div>
 
       {err && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">{err}</p>}
@@ -137,8 +165,20 @@ export default function JobFinder({ store, onDone }: { store: Store; onDone: () 
 
           {plan.queries?.length > 0 && (
             <div>
-              <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-ink-500">
-                {t('Searches — each opens LinkedIn ready to go', 'Búsquedas — cada una abre LinkedIn lista')}
+              <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                <p className="text-[11px] font-medium uppercase tracking-wider text-ink-500">
+                  {t('Searches', 'Búsquedas')}
+                </p>
+                <Button variant="primary" className="ml-auto" disabled={busy !== ''}
+                        onClick={() => pullAll(plan.queries.map((q) => q.keywords))}>
+                  {busy === 'pull'
+                    ? t('Pulling…', 'Trayendo…')
+                    : t(`Run all ${plan.queries.length} and save the jobs`, `Correr las ${plan.queries.length} y guardar los avisos`)}
+                </Button>
+              </div>
+              <p className="mb-2 text-xs text-ink-500">
+                {t('The button runs every search against the open job feeds and files what comes back. The cards below open the same searches on LinkedIn, which has more but cannot be read automatically.',
+                   'El botón corre cada búsqueda en los feeds abiertos y guarda lo que vuelve. Las tarjetas de abajo abren esas mismas búsquedas en LinkedIn, que tiene más pero no se puede leer automáticamente.')}
               </p>
               <div className="grid gap-2 sm:grid-cols-2">
                 {plan.queries.map((q, i) => (

@@ -43,6 +43,7 @@ export interface Bullet { text: string; es?: string; tracks: Track[] }
 export interface Job {
   id: number; source: string; external_id: string; company: string; title: string;
   location: string; url: string; posted_on: string; description: string; track: string;
+  category: string; tailored_at: string;
   starred: number; dismissed: number; application_id: number | null; imported_at: string;
 }
 

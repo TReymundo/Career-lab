@@ -164,3 +164,10 @@ CREATE TABLE IF NOT EXISTS setting (
 /** v3: tracks widened beyond finance-only. Old rows keep their meaning. */
 db.prepare("UPDATE application SET track = 'finance' WHERE track = 'markets'").run();
 db.prepare("UPDATE job SET track = 'finance' WHERE track = 'markets'").run();
+
+/** v4: postings arrive with an industry/category, which is what makes the job grid groupable. */
+const jobCols = new Set(
+  (db.prepare('PRAGMA table_info(job)').all() as { name: string }[]).map((c) => c.name),
+);
+if (!jobCols.has('category')) db.exec("ALTER TABLE job ADD COLUMN category TEXT NOT NULL DEFAULT ''");
+if (!jobCols.has('tailored_at')) db.exec("ALTER TABLE job ADD COLUMN tailored_at TEXT NOT NULL DEFAULT ''");

@@ -66,6 +66,11 @@ export const api = {
     post('/api/ai/sources', payload) as Promise<{ plan: SourcePlan }>,
   aiExtractJobs: (payload: { text: string; lang: string }) =>
     post('/api/ai/extract-jobs', payload) as Promise<{ jobs: unknown[]; inserted: number; skipped: number }>,
+  aiAdapt: (payload: { cv: string; company: string; role: string; jd: string; lang: string }) =>
+    post('/api/ai/adapt', payload) as Promise<{ adaptation: { summary: string; lead: string[]; why: string } }>,
+
+  pullJobs: (queries: string[], feeds?: string[]) =>
+    post('/api/jobs/pull', { queries, feeds }) as Promise<PullReport>,
   aiTranslate: (payload: { text: string; to: 'es' | 'en' }) =>
     post('/api/ai/translate', payload) as Promise<{ text: string }>,
 
@@ -97,6 +102,13 @@ export const api = {
 export interface AiStatus { configured: boolean; source: 'env' | 'app' | 'none'; model: string; hint: string }
 export interface BulletSuggestion { original: string; improved: string; why: string; needs: string[] }
 export interface FieldItem { target: string; label: string; value: string }
+export interface PullReport {
+  inserted: number;
+  skipped: number;
+  fetched: number;
+  perFeed: { feed: string; fetched: number; error?: string }[];
+}
+
 export interface SourcePlan {
   queries: { label: string; keywords: string; location: string }[];
   companies: { name: string; slug: string; why: string; board?: boolean }[];

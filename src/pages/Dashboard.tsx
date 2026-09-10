@@ -1,9 +1,9 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Badge, BarList, Card, ColumnChart, Empty, SectionTitle, Stat } from '../components/ui.tsx';
-import { daysUntil, fmtDate } from '../lib/api.ts';
+import { api, daysUntil, fmtDate } from '../lib/api.ts';
 import { useT } from '../lib/i18n.ts';
-import { LIVE_STATUSES, STATUSES, TRACKS, parseBullets, statusMeta, type Store } from '../lib/types.ts';
+import { LIVE_STATUSES, STATUSES, TRACKS, parseBullets, statusMeta, type Job, type Store } from '../lib/types.ts';
 
 const WEEKS = 8;
 
@@ -33,6 +33,19 @@ const ts = (iso: string) => {
 
 export default function Dashboard({ store }: { store: Store }) {
   const t = useT();
+
+  /**
+   * The queue: jobs saved and starred that have not been turned into anything yet. This is
+   * the pile that actually decides how the search goes, so it belongs at the top of the day.
+   */
+  const [pending, setPending] = useState<Job[]>([]);
+  const [savedCount, setSavedCount] = useState(0);
+  useEffect(() => {
+    void api.searchJobs({ limit: 500 }).then((r) => {
+      setSavedCount(r.total);
+      setPending(r.rows.filter((j) => !j.application_id).sort((a, b) => b.starred - a.starred).slice(0, 60));
+    }).catch(() => { /* the dashboard still works without the queue */ });
+  }, [store.application.length]);
   const live = store.application.filter((a) => LIVE_STATUSES.includes(a.status));
   const interviewing = store.application.filter((a) => a.status === 'interviewing' || a.status === 'offer');
   const applied = store.application.filter((a) => a.applied_on);
@@ -101,6 +114,34 @@ export default function Dashboard({ store }: { store: Store }) {
               tone={responseRate >= 20 ? 'emerald' : 'amber'} />
         <Stat label={t('Applications / week', 'Postulaciones por semana')} value={velocity} hint={t('last 4 wks', 'últimas 4 sem')} tone="sky" />
       </div>
+
+      {pending.length > 0 && (
+        <Card className="p-5">
+          <SectionTitle right={
+            <Link to="/jobs" className="text-xs text-brand-600 hover:underline">{t('All jobs →', 'Todos los avisos →')}</Link>
+          }>
+            {t(`Waiting for a CV — ${pending.length} of ${savedCount} saved jobs`,
+               `Esperando un CV — ${pending.length} de ${savedCount} avisos guardados`)}
+          </SectionTitle>
+          <p className="mb-3 text-sm text-ink-500">
+            {t('These are saved but not yet adapted. Press Adapt CV on any of them and it becomes an application with its own tailored CV.',
+               'Están guardados pero todavía sin adaptar. Apretá Adaptar CV en cualquiera y se convierte en una postulación con su propio CV a medida.')}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {pending.slice(0, 24).map((j) => (
+              <Link key={j.id} to="/jobs"
+                    className="max-w-64 truncate rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs text-ink-700 transition hover:border-brand-300 hover:bg-brand-50">
+                {j.starred ? '★ ' : ''}{j.title} · <span className="text-ink-400">{j.company}</span>
+              </Link>
+            ))}
+            {pending.length > 24 && (
+              <Link to="/jobs" className="rounded-lg px-2.5 py-1.5 text-xs text-brand-700 hover:underline">
+                {t(`+${pending.length - 24} more`, `+${pending.length - 24} más`)}
+              </Link>
+            )}
+          </div>
+        </Card>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
         <Card className="p-5">
