@@ -7,14 +7,20 @@ It assumes nothing about you. No particular university, country, field or amount
 experience. If you have never had a job, the guided path builds your first CV from what you
 *have* done.
 
-## Running it
+## Opening it
+
+Double-click **`Open Career Lab.bat`** in this folder. It starts everything and opens your
+browser at http://localhost:5273. Keep the black window open while you use the app; closing it
+stops the app. On a first run it installs dependencies, which takes a minute.
+
+Or, from a terminal:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Then open http://localhost:5273 and follow **Start here**. That is the whole instruction.
+Either way, open http://localhost:5273 and follow **Start here**. That is the whole instruction.
 
 `npm run reset` empties everything if you want to begin again from scratch.
 
