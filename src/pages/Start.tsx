@@ -5,6 +5,7 @@ import { api, type BulletSuggestion, type FieldEdit, type FieldItem } from '../l
 import { useT, useUILang } from '../lib/i18n.ts';
 import { buildCV } from '../lib/templates.ts';
 import { TRACKS, parseBullets, type Experience, type ParsedCV, type Store, type Track } from '../lib/types.ts';
+import JobFinder from '../components/JobFinder.tsx';
 
 /**
  * One path, top to bottom. Each step does its own work inline and ticks itself off when you
@@ -30,7 +31,14 @@ interface Step {
   render: (ctx: Ctx) => React.ReactNode;
 }
 
-interface Phase { id: string; title: (t: Ctx['t']) => string; blurb: (t: Ctx['t']) => string; steps: Step[] }
+interface Phase {
+  id: string;
+  title: (t: Ctx['t']) => string;
+  blurb: (t: Ctx['t']) => string;
+  steps: Step[];
+  /** Shown when every step in the phase is done: what you just earned, and where to go next. */
+  done?: (t: Ctx['t']) => { headline: string; body: string; cta?: string; to?: string };
+}
 
 const hasDigit = (s: string) => /\d/.test(s);
 const allBullets = (s: Store) => s.experience.flatMap((e) => parseBullets(e.bullets));
@@ -43,6 +51,11 @@ const PHASES: Phase[] = [
     id: 'you',
     title: (t) => t('Who you are', 'Quién sos'),
     blurb: (t) => t('Two minutes. Everything else builds on this.', 'Dos minutos. Todo lo demás se construye sobre esto.'),
+    done: (t) => ({
+      headline: t('That’s you on file.', 'Listo, ya sos alguien en el sistema.'),
+      body: t('Every document from here on carries these details. Next: your CV.',
+              'Todos los documentos de acá en adelante llevan estos datos. Ahora: tu CV.'),
+    }),
     steps: [
       {
         id: 'basics',
@@ -69,6 +82,13 @@ const PHASES: Phase[] = [
     title: (t) => t('Build your CV', 'Armá tu CV'),
     blurb: (t) => t('Import one you already have, or make one from nothing. Both work.',
                     'Importá uno que ya tengas, o armalo desde cero. Las dos cosas funcionan.'),
+    done: (t) => ({
+      headline: t('Your CV exists.', 'Tu CV ya existe.'),
+      body: t('You can open it, edit it and export it as a real file any time. Sharpening it with AI is next, and it is optional.',
+              'Podés abrirlo, editarlo y exportarlo como archivo cuando quieras. Lo próximo es afinarlo con IA, y es opcional.'),
+      cta: t('Open my CV', 'Abrir mi CV'),
+      to: '/profile',
+    }),
     steps: [
       {
         id: 'source',
@@ -125,6 +145,11 @@ const PHASES: Phase[] = [
     title: (t) => t('Sharpen it with AI', 'Afinalo con IA'),
     blurb: (t) => t('Optional, and it needs your own Google API key. Skip the phase if you would rather not.',
                     'Opcional, y necesita tu propia clave de Google. Saltealo si preferís.'),
+    done: (t) => ({
+      headline: t('Sharpened.', 'Afinado.'),
+      body: t('Now the part that actually takes time: finding jobs worth applying to. The AI can plan that too.',
+              'Ahora la parte que de verdad lleva tiempo: encontrar avisos que valgan la pena. La IA también puede planificar eso.'),
+    }),
     steps: [
       {
         id: 'key',
@@ -160,13 +185,20 @@ const PHASES: Phase[] = [
     title: (t) => t('Find jobs', 'Buscá avisos'),
     blurb: (t) => t('Get openings into the app so you can search and rank them.',
                     'Traé las búsquedas a la app para poder filtrarlas y ordenarlas.'),
+    done: (t) => ({
+      headline: t('You have jobs to work with.', 'Ya tenés avisos con qué trabajar.'),
+      body: t('Search and rank them, then tick the good ones and generate a tailored set of documents for each.',
+              'Filtralos y ordenalos, después marcá los buenos y generá documentos a medida para cada uno.'),
+      cta: t('Go to Jobs', 'Ir a Avisos'),
+      to: '/jobs',
+    }),
     steps: [
       {
         id: 'linkedin',
         title: (t) => t('Open LinkedIn and collect some jobs', 'Abrí LinkedIn y juntá avisos'),
         help: (t) => t('Search, save what looks right, then bring them in. The buttons below do both halves.',
                        'Buscá, guardá lo que te sirva, y después traelos. Los botones de abajo hacen las dos mitades.'),
-        auto: (s) => s.setting['step:linkedin'] === 'done',
+        auto: (s) => s.setting['step:linkedin'] === 'done' || false,
         render: (ctx) => <JobsStep {...ctx} />,
       },
     ],
@@ -176,6 +208,13 @@ const PHASES: Phase[] = [
     title: (t) => t('Apply', 'Postulate'),
     blurb: (t) => t('Turn a job into a tailored set of documents you can actually send.',
                     'Convertí un aviso en documentos hechos a medida que podés mandar.'),
+    done: (t) => ({
+      headline: t('Documents done.', 'Documentos listos.'),
+      body: t('Everything you generate is saved and exportable. What is left is keeping track of what you sent.',
+              'Todo lo que generás queda guardado y exportable. Lo que falta es seguir la pista de lo que mandaste.'),
+      cta: t('Open Documents', 'Abrir Documentos'),
+      to: '/documents',
+    }),
     steps: [
       {
         id: 'generate',
@@ -215,6 +254,13 @@ const PHASES: Phase[] = [
     id: 'track',
     title: (t) => t('Keep track', 'Seguí el hilo'),
     blurb: (t) => t('So nothing slips while you are busy.', 'Para que no se te escape nada mientras estás ocupado.'),
+    done: (t) => ({
+      headline: t('Setup is finished.', 'La configuración terminó.'),
+      body: t('From here it is the work itself: search, generate, send, follow up. The board is where you live now.',
+              'De acá en más es el trabajo en sí: buscar, generar, enviar, hacer seguimiento. El tablero es tu lugar ahora.'),
+      cta: t('Open the board', 'Abrir el tablero'),
+      to: '/pipeline',
+    }),
     steps: [
       {
         id: 'pipeline',
@@ -332,10 +378,25 @@ export default function Start({ store, reload }: { store: Store; reload: () => P
                   </Card>
                 );
               })}
+              {phaseDone && phase.done && <PhaseDone {...phase.done(t)} />}
             </div>
           </section>
         );
       })}
+    </div>
+  );
+}
+
+/** The "great, that's done — here is what it bought you" moment at the end of each phase. */
+function PhaseDone({ headline, body, cta, to }: { headline: string; body: string; cta?: string; to?: string }) {
+  return (
+    <div className="animate-rise mt-1 flex flex-wrap items-center gap-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3">
+      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand-500 text-sm text-white">✓</span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-brand-900">{headline}</p>
+        <p className="text-xs text-ink-700">{body}</p>
+      </div>
+      {cta && to && <Link to={to}><Button variant="primary">{cta}</Button></Link>}
     </div>
   );
 }
@@ -1098,9 +1159,16 @@ function AIReview({ store, reload, done, next, t, lang }: Ctx) {
   );
 }
 
-function JobsStep({ done, next, t }: Ctx) {
+function JobsStep({ store, reload, done, next, t }: Ctx) {
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      <JobFinder store={store} onDone={async () => { await reload(); done('linkedin'); }} />
+
+      <details className="rounded-lg border border-line bg-sunken/60 px-3 py-2 text-sm">
+        <summary className="cursor-pointer font-medium text-ink-900">
+          {t('Or do it by hand on LinkedIn', 'O hacelo a mano en LinkedIn')}
+        </summary>
+        <div className="mt-3 space-y-3">
       <div className="flex flex-wrap gap-2">
         <a href="https://www.linkedin.com/jobs/" target="_blank" rel="noreferrer">
           <Button variant="primary">{t('1. Open LinkedIn jobs ↗', '1. Abrir avisos de LinkedIn ↗')}</Button>
@@ -1121,6 +1189,9 @@ function JobsStep({ done, next, t }: Ctx) {
           <span>{t('In a hurry? On the Jobs screen you can paste a search results page straight in.',
                    '¿Apurado? En Avisos podés pegar una página de resultados directamente.')}</span></li>
       </ul>
+        </div>
+      </details>
+
       <Button variant="ghost" onClick={() => { done('linkedin'); next(); }}>{t('I’ve got jobs in →', 'Ya tengo avisos →')}</Button>
     </div>
   );

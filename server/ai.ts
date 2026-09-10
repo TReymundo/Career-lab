@@ -264,3 +264,92 @@ ${text}`;
 export async function freeform(prompt: string, lang: Lang = 'en') {
   return callGemini(prompt, { system: houseRules(lang) });
 }
+
+/**
+ * Where to look for jobs, derived from what you have already told the app.
+ *
+ * This deliberately does NOT produce job postings: a model inventing openings and URLs is
+ * how you end up applying to something that does not exist. It produces search terms and
+ * company names — the app then fetches the real postings from real boards.
+ */
+export interface SourcePlan {
+  queries: { label: string; keywords: string; location: string }[];
+  companies: { name: string; slug: string; why: string }[];
+  titles: string[];
+}
+
+const SOURCE_SCHEMA: Schema = {
+  type: 'object',
+  properties: {
+    queries: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { label: { type: 'string' }, keywords: { type: 'string' }, location: { type: 'string' } },
+        required: ['label', 'keywords', 'location'],
+      },
+    },
+    companies: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { name: { type: 'string' }, slug: { type: 'string' }, why: { type: 'string' } },
+        required: ['name', 'slug', 'why'],
+      },
+    },
+    titles: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['queries', 'companies', 'titles'],
+};
+
+export async function suggestSources(input: {
+  cv: string; tracks: string; location: string; keywords: string; lang: Lang;
+}) {
+  const prompt = `This person is looking for work. Plan where they should look.
+
+Their CV:
+${input.cv.slice(0, 4000)}
+
+Areas they are targeting: ${input.tracks || 'not specified'}
+Where they are based: ${input.location || 'not specified'}
+${input.keywords ? `Things they specifically want included: ${input.keywords}` : ''}
+
+Produce three things:
+1. "queries" — 6 to 8 job-board searches, each a realistic keyword string someone would type, plus a location. Vary seniority wording (intern, junior, graduate, analyst, trainee, entry level) and vary the angle: some by role name, some by skill, some by industry. Include at least one remote-friendly search. Write labels in the user's language.
+2. "companies" — 10 to 14 real, currently-operating employers who plausibly hire this profile in that location or remotely. Mix large and small. For "slug", give the lowercase single-word form of the company name most likely used in a careers URL (e.g. "Mercado Libre" → "mercadolibre"). "why" is at most ten words on why they fit this person.
+3. "titles" — 8 job titles this person is genuinely qualified to apply for today, given the experience shown.
+
+Never invent a job posting, a URL, or a vacancy. Only search terms, company names and job titles.`;
+
+  return json<SourcePlan>(prompt, { system: houseRules(input.lang), schema: SOURCE_SCHEMA });
+}
+
+/** Pulls structured job rows out of whatever the user pasted. Extraction only, never invention. */
+export interface ExtractedJob { company: string; title: string; location: string; url: string; description: string }
+
+const EXTRACT_SCHEMA: Schema = {
+  type: 'array',
+  items: {
+    type: 'object',
+    properties: {
+      company: { type: 'string' }, title: { type: 'string' }, location: { type: 'string' },
+      url: { type: 'string' }, description: { type: 'string' },
+    },
+    required: ['company', 'title', 'location', 'url', 'description'],
+  },
+};
+
+export async function extractJobs(text: string, lang: Lang) {
+  const prompt = `Pull every distinct job opening out of the text below. It may be a copied search results page, a single posting, an email, or a messy list.
+
+Rules:
+- One object per opening. If the same opening appears twice, return it once.
+- Copy values from the text. Never guess a company, a location or a URL that is not there — use an empty string instead.
+- "description" is whatever detail the text gives about that specific opening, or an empty string.
+- If the text contains no job openings at all, return an empty array.
+
+Text:
+${text.slice(0, 12000)}`;
+
+  return json<ExtractedJob[]>(prompt, { system: houseRules(lang), schema: EXTRACT_SCHEMA });
+}

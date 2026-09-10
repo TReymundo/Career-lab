@@ -2,7 +2,16 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Job, ParsedCV, Store } from './types.ts';
 
 const json = async (res: Response) => {
-  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+  if (!res.ok) {
+    const body = await res.text();
+    try {
+      const parsed = JSON.parse(body) as { error?: string };
+      throw new Error(parsed.error || `${res.status} ${body}`);
+    } catch (e) {
+      if (e instanceof Error && e.message && !e.message.startsWith('Unexpected')) throw e;
+      throw new Error(`${res.status} ${body}`);
+    }
+  }
   return res.json();
 };
 
@@ -30,7 +39,7 @@ export const api = {
     post('/api/jobs/import', { text, mode, source }) as Promise<{ inserted: number; skipped: number; mapped?: Record<string, string> }>,
 
   fetchAts: (provider: string, slug: string) =>
-    post('/api/jobs/ats', { provider, slug }) as Promise<{ inserted: number; skipped: number }>,
+    post('/api/jobs/ats', { provider, slug }) as Promise<{ inserted: number; skipped: number; provider?: string; slug?: string }>,
 
   importLinkedInProfile: (filename: string, text: string) =>
     post('/api/import/linkedin-profile', { filename, text }) as Promise<{ imported: number; into: string }>,
@@ -53,6 +62,10 @@ export const api = {
     post('/api/ai/review', payload) as Promise<{ review: AiReview }>,
   aiPolish: (payload: { fields: FieldItem[]; track?: string; lang: string }) =>
     post('/api/ai/polish', payload) as Promise<{ edits: FieldEdit[] }>,
+  aiSources: (payload: { cv: string; tracks: string; location: string; keywords: string; lang: string }) =>
+    post('/api/ai/sources', payload) as Promise<{ plan: SourcePlan }>,
+  aiExtractJobs: (payload: { text: string; lang: string }) =>
+    post('/api/ai/extract-jobs', payload) as Promise<{ jobs: unknown[]; inserted: number; skipped: number }>,
   aiTranslate: (payload: { text: string; to: 'es' | 'en' }) =>
     post('/api/ai/translate', payload) as Promise<{ text: string }>,
 
@@ -84,6 +97,11 @@ export const api = {
 export interface AiStatus { configured: boolean; source: 'env' | 'app' | 'none'; model: string; hint: string }
 export interface BulletSuggestion { original: string; improved: string; why: string; needs: string[] }
 export interface FieldItem { target: string; label: string; value: string }
+export interface SourcePlan {
+  queries: { label: string; keywords: string; location: string }[];
+  companies: { name: string; slug: string; why: string }[];
+  titles: string[];
+}
 export interface FieldEdit { target: string; label: string; from: string; to: string; why: string }
 export interface AiReview {
   verdict: string;

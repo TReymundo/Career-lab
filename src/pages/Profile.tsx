@@ -119,6 +119,14 @@ function ExperienceCard({ exp, reload }: { exp: Experience; reload: () => Promis
     await reload();
   };
 
+  /** Deletions persist immediately — a line you removed should stay removed. */
+  const removeBullet = async (i: number) => {
+    const next = bullets.filter((_, j) => j !== i);
+    setBullets(next);
+    await api.update('experience', exp.id, { bullets: JSON.stringify(next) });
+    await reload();
+  };
+
   const setBullet = (i: number, patch: Partial<Bullet>) =>
     setBullets((bs) => bs.map((b, j) => (j === i ? { ...b, ...patch } : b)));
 
@@ -185,7 +193,7 @@ function ExperienceCard({ exp, reload }: { exp: Experience; reload: () => Promis
                         <span className="ml-auto text-[11px] text-ink-400">
                           {b.tracks.length === 0 ? t('all tracks', 'todos') : `${b.tracks.length}`}
                         </span>
-                        <button onClick={() => setBullets((bs) => bs.filter((_, j) => j !== i))}
+                        <button onClick={() => removeBullet(i)}
                                 className="text-[11px] text-ink-400 hover:text-rose-600">{t('remove', 'quitar')}</button>
                       </div>
                     </div>
@@ -199,12 +207,10 @@ function ExperienceCard({ exp, reload }: { exp: Experience; reload: () => Promis
 
         <div className="flex shrink-0 flex-col items-end gap-2">
           <Button variant="primary" disabled={!dirty} onClick={save}>{dirty ? t('Save', 'Guardar') : t('Saved', 'Guardado')}</Button>
-          {expanded && (
-            <Button variant="danger" onClick={async () => {
-              if (!confirm(`Delete “${exp.org}”?`)) return;
+          <Button variant="danger" onClick={async () => {
+              if (!confirm(t(`Delete “${exp.org}” and everything in it?`, `¿Eliminar “${exp.org}” y todo lo que tiene adentro?`))) return;
               await api.remove('experience', exp.id); await reload();
             }}>{t('Delete', 'Eliminar')}</Button>
-          )}
           {!expanded && bullets.length > 0 && <Badge>{bullets.length} {t('lines', 'líneas')}</Badge>}
         </div>
       </div>

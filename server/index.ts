@@ -3,11 +3,11 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import { db, dbPath } from './db.ts';
-import { ATS, fetchAts, importDelimited, importLinkedInProfile, importPastedBlocks } from './jobs.ts';
+import { ATS, fetchAts, importDelimited, importLinkedInProfile, importPastedBlocks, insertJobs } from './jobs.ts';
 import { applyProposal, emailConfigured, scanMailbox, type Proposal } from './email.ts';
 import { fileName, toDocx, toPdf } from './export.ts';
 import { applyParsedCV, docxToText, parseCV } from './cvimport.ts';
-import { improveBullets, keyStatus, polishFields, reviewCV, translate, writeSummary, freeform } from './ai.ts';
+import { extractJobs, improveBullets, keyStatus, polishFields, reviewCV, suggestSources, translate, writeSummary, freeform } from './ai.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -162,6 +162,16 @@ app.post('/api/ai/:action', async (req, res) => {
       if (!Array.isArray(fields) || !fields.length) return res.status(400).json({ error: 'no fields sent' });
       return res.json({ edits: await polishFields(fields.slice(0, 60), { track: track ?? '', lang }) });
     }
+    if (action === 'sources') {
+      const { cv, tracks, location, keywords } = req.body ?? {};
+      return res.json({ plan: await suggestSources({ cv: cv ?? '', tracks: tracks ?? '', location: location ?? '', keywords: keywords ?? '', lang }) });
+    }
+    if (action === 'extract-jobs') {
+      const { text } = req.body ?? {};
+      if (!text) return res.status(400).json({ error: 'nothing to read' });
+      const jobs = await extractJobs(String(text), lang);
+      return res.json({ jobs, ...insertJobs(jobs.map((j) => ({ ...j, source: 'ai' }))) });
+    }
     if (action === 'translate') {
       const { text, to } = req.body ?? {};
       if (!text) return res.status(400).json({ error: 'no text sent' });
@@ -294,14 +304,39 @@ app.post('/api/jobs/import', (req, res) => {
   } catch (e) { res.status(400).json({ error: String(e) }); }
 });
 
+/**
+ * One company name, three boards tried. Typing "Mercado Libre" should not require knowing
+ * which applicant-tracking system they happen to use, or what their URL slug looks like.
+ */
 app.post('/api/jobs/ats', async (req, res) => {
   const { provider, slug } = req.body ?? {};
-  if (!provider || !slug || !(provider in ATS)) return res.status(400).json({ error: 'provider and slug required' });
-  try {
-    res.json(await fetchAts(provider as keyof typeof ATS, String(slug).trim()));
-  } catch (e) {
-    res.status(502).json({ error: `Could not reach that board. ${String(e)}` });
+  const raw = String(slug ?? '').trim();
+  if (!raw) return res.status(400).json({ error: 'company name required' });
+
+  // "Mercado Libre" → mercadolibre; "J.P. Morgan" → jpmorgan; a pasted URL → its slug.
+  const fromUrl = raw.match(/(?:greenhouse\.io|lever\.co|ashbyhq\.com)\/([^/?#]+)/i)?.[1];
+  const candidates = [...new Set([
+    fromUrl,
+    raw.toLowerCase().replace(/[^a-z0-9]/g, ''),
+    raw.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+  ].filter(Boolean))] as string[];
+
+  const providers = provider && provider !== 'auto' ? [provider as keyof typeof ATS] : (Object.keys(ATS) as (keyof typeof ATS)[]);
+  const tried: string[] = [];
+
+  for (const p of providers) {
+    for (const c of candidates) {
+      try {
+        const result = await fetchAts(p, c);
+        if (result.inserted > 0 || result.skipped > 0) return res.json({ ...result, provider: p, slug: c });
+      } catch {
+        tried.push(`${p}/${c}`);
+      }
+    }
   }
+  res.status(404).json({
+    error: `No public job board found for “${raw}”. Tried ${tried.length} combinations. Most large banks, consultancies and local employers run their own careers sites, which this cannot read — use the LinkedIn import or the AI paste for those.`,
+  });
 });
 
 app.post('/api/import/linkedin-profile', (req, res) => {

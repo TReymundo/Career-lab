@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Area, Badge, Button, Card, Empty, Field, Select, SectionTitle } from '../components/ui.tsx';
 import { api, fmtDate } from '../lib/api.ts';
 import { useT, useUILang } from '../lib/i18n.ts';
+import JobFinder from '../components/JobFinder.tsx';
 import { buildCV, matchScore } from '../lib/templates.ts';
 import { TRACKS, type Job, type Lang, type SavedSearch, type Store, type Track } from '../lib/types.ts';
 
@@ -93,7 +94,7 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
         <Button onClick={() => setShowImport((v) => !v)}>{showImport ? t('Close import', 'Cerrar importación') : t('Import jobs', 'Importar avisos')}</Button>
       </div>
 
-      {showImport && <ImportPanel onDone={async () => { await Promise.all([load(), reload()]); }} />}
+      {showImport && <ImportPanel store={store} onDone={async () => { await Promise.all([load(), reload()]); }} />}
 
       <SavedSearches store={store} reload={reload} current={q} apply={(t) => { setQ(t); setApplied(t); }} />
 
@@ -219,12 +220,12 @@ function SavedSearches({ store, reload, current, apply }:
   );
 }
 
-function ImportPanel({ onDone }: { onDone: () => Promise<void> }) {
+function ImportPanel({ store, onDone }: { store: Store; onDone: () => Promise<void> }) {
   const t = useT();
-  const [tab, setTab] = useState<'file' | 'paste' | 'ats' | 'profile'>('file');
+  const [tab, setTab] = useState<'ai' | 'file' | 'paste' | 'ats' | 'profile'>('ai');
   const [text, setText] = useState('');
   const [filename, setFilename] = useState('');
-  const [provider, setProvider] = useState('greenhouse');
+  const [provider, setProvider] = useState('auto');
   const [slug, setSlug] = useState('');
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
@@ -244,6 +245,7 @@ function ImportPanel({ onDone }: { onDone: () => Promise<void> }) {
   };
 
   const TABS = [
+    { id: 'ai', label: t('Find jobs with AI', 'Buscar avisos con IA') },
     { id: 'file', label: t('LinkedIn export (CSV)', 'Exportación de LinkedIn (CSV)') },
     { id: 'paste', label: t('Paste a results page', 'Pegar resultados') },
     { id: 'ats', label: t('Company job board', 'Board de una empresa') },
@@ -260,6 +262,8 @@ function ImportPanel({ onDone }: { onDone: () => Promise<void> }) {
           </button>
         ))}
       </div>
+
+      {tab === 'ai' && <JobFinder store={store} onDone={onDone} />}
 
       {tab === 'file' && (
         <div className="space-y-3">
@@ -296,21 +300,22 @@ function ImportPanel({ onDone }: { onDone: () => Promise<void> }) {
       {tab === 'ats' && (
         <div className="space-y-3">
           <p className="text-sm text-ink-500">
-            Pulls a company’s live openings from the public job-board API its own careers page uses.
-            The slug is the company name in its careers URL — <code className="text-brand-600">boards.greenhouse.io/<b>stripe</b></code>,
-            <code className="text-brand-600"> jobs.lever.co/<b>palantir</b></code>. Most large banks run their own systems,
-            so expect this to work for tech, fintech and startups rather than large banks.
+            {t('Pulls a company’s live openings from the public board its own careers page uses. Just type the company name — the slug and the provider are worked out for you. Most banks, consultancies and local employers run their own careers sites, which this cannot read.',
+               'Trae las búsquedas activas de una empresa desde el board público que usa su propia página de empleos. Escribí el nombre de la empresa — el resto se resuelve solo. La mayoría de los bancos, consultoras y empresas locales tienen su propio sitio, que esto no puede leer.')}
           </p>
           <div className="flex flex-wrap gap-2">
             <Select value={provider} onChange={(e) => setProvider(e.target.value)} className="w-44">
+              <option value="auto">{t('Try all three', 'Probar los tres')}</option>
               <option value="greenhouse">Greenhouse</option>
               <option value="lever">Lever</option>
               <option value="ashby">Ashby</option>
             </Select>
-            <Field value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="company slug" className="w-56" />
+            <Field value={slug} onChange={(e) => setSlug(e.target.value)} className="w-64"
+                   placeholder={t('Company name or careers URL', 'Nombre de la empresa o link de empleos')} />
             <Button variant="primary" disabled={busy || !slug.trim()} onClick={() => run(async () => {
               const r = await api.fetchAts(provider, slug.trim());
-              return `${r.inserted} added, ${r.skipped} already there.`;
+              return t(`${r.inserted} added from ${r.provider ?? provider}, ${r.skipped} already there.`,
+                       `${r.inserted} agregados desde ${r.provider ?? provider}, ${r.skipped} ya estaban.`);
             })}>{t('Fetch', 'Traer')}</Button>
           </div>
         </div>

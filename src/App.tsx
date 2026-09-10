@@ -20,15 +20,32 @@ import Inbox from './pages/Inbox.tsx';
 type T = (en: string, es: string) => string;
 
 const NAV = [
-  { to: '/start', icon: '◎', label: (t: T) => t('Start here', 'Empezá acá'), sub: (t: T) => t('The guided path', 'El camino guiado'), unlock: () => true },
-  { to: '/profile', icon: '✎', label: (t: T) => t('My CV', 'Mi CV'), sub: (t: T) => t('Everything about you', 'Todo sobre vos'), unlock: (s: Store) => s.experience.length > 0 },
-  { to: '/jobs', icon: '⌕', label: (t: T) => t('Jobs', 'Avisos'), sub: (t: T) => t('Import, search, rank', 'Importar, buscar, ordenar'), unlock: (s: Store) => s.experience.some((e) => parseBullets(e.bullets).length > 0) },
-  { to: '/documents', icon: '❐', label: (t: T) => t('Documents', 'Documentos'), sub: (t: T) => t('CV, letters, prep', 'CV, cartas, preparación'), unlock: (s: Store) => s.application.length > 0 },
-  { to: '/pipeline', icon: '▤', label: (t: T) => t('Pipeline', 'Tablero'), sub: (t: T) => t('Track applications', 'Seguí tus postulaciones'), unlock: (s: Store) => s.application.length > 0 },
-  { to: '/answers', icon: '✍', label: (t: T) => t('Answer bank', 'Respuestas'), sub: (t: T) => t('Form answers', 'Respuestas de formularios'), unlock: (s: Store) => s.document.length > 0 },
-  { to: '/contacts', icon: '⚇', label: (t: T) => t('Network', 'Contactos'), sub: (t: T) => t('People to follow up', 'Gente a la que seguir'), unlock: (s: Store) => s.application.length > 0 },
-  { to: '/dashboard', icon: '◱', label: (t: T) => t('Dashboard', 'Panel'), sub: (t: T) => t('Metrics', 'Métricas'), unlock: (s: Store) => s.application.some((a) => a.status !== 'saved') },
-  { to: '/inbox', icon: '✉', label: (t: T) => t('Inbox sync', 'Correo'), sub: (t: T) => t('Recruiter email', 'Mails de reclutadores'), unlock: (s: Store) => s.application.some((a) => a.status === 'applied') },
+  { to: '/start', icon: '◎', label: (t: T) => t('Start here', 'Empezá acá'), sub: (t: T) => t('The guided path', 'El camino guiado'),
+    unlock: () => true, opens: (t: T) => '' },
+  { to: '/profile', icon: '✎', label: (t: T) => t('My CV', 'Mi CV'), sub: (t: T) => t('Everything about you', 'Todo sobre vos'),
+    unlock: (s: Store) => s.experience.length > 0,
+    opens: (t: T) => t('Opens once you add anything to your CV', 'Se abre cuando agregás algo a tu CV') },
+  { to: '/jobs', icon: '⌕', label: (t: T) => t('Jobs', 'Avisos'), sub: (t: T) => t('Import, search, rank', 'Importar, buscar, ordenar'),
+    unlock: (s: Store) => s.experience.some((e) => parseBullets(e.bullets).length > 0),
+    opens: (t: T) => t('Opens once your CV has one line in it', 'Se abre cuando tu CV tiene una línea') },
+  { to: '/documents', icon: '❐', label: (t: T) => t('Documents', 'Documentos'), sub: (t: T) => t('CV, letters, prep', 'CV, cartas, preparación'),
+    unlock: (s: Store) => s.application.length > 0,
+    opens: (t: T) => t('Opens once you pick a job to apply to', 'Se abre cuando elegís un aviso') },
+  { to: '/pipeline', icon: '▤', label: (t: T) => t('Pipeline', 'Tablero'), sub: (t: T) => t('Track applications', 'Seguí tus postulaciones'),
+    unlock: (s: Store) => s.application.length > 0,
+    opens: (t: T) => t('Opens once you pick a job to apply to', 'Se abre cuando elegís un aviso') },
+  { to: '/answers', icon: '✍', label: (t: T) => t('Answer bank', 'Respuestas'), sub: (t: T) => t('Form answers', 'Respuestas de formularios'),
+    unlock: (s: Store) => s.document.length > 0,
+    opens: (t: T) => t('Opens once you generate your first documents', 'Se abre cuando generás tus primeros documentos') },
+  { to: '/contacts', icon: '⚇', label: (t: T) => t('Network', 'Contactos'), sub: (t: T) => t('People to follow up', 'Gente a la que seguir'),
+    unlock: (s: Store) => s.application.length > 0,
+    opens: (t: T) => t('Opens once you pick a job to apply to', 'Se abre cuando elegís un aviso') },
+  { to: '/dashboard', icon: '◱', label: (t: T) => t('Dashboard', 'Panel'), sub: (t: T) => t('Metrics', 'Métricas'),
+    unlock: (s: Store) => s.application.some((a) => a.status !== 'saved'),
+    opens: (t: T) => t('Opens once an application moves along the board', 'Se abre cuando una postulación avanza en el tablero') },
+  { to: '/inbox', icon: '✉', label: (t: T) => t('Inbox sync', 'Correo'), sub: (t: T) => t('Recruiter email', 'Mails de reclutadores'),
+    unlock: (s: Store) => s.application.some((a) => a.status === 'applied'),
+    opens: (t: T) => t('Opens once you have applied to something', 'Se abre cuando te postulaste a algo') },
 ];
 
 const TITLES: Record<string, (t: T) => { title: string; sub: string }> = {
@@ -46,7 +63,14 @@ const TITLES: Record<string, (t: T) => { title: string; sub: string }> = {
 export default function App() {
   const { store, error, reload } = useStore();
   const { pathname } = useLocation();
-  const [showAll, setShowAll] = useState(false);
+  // The preference sticks: someone who wants the whole menu should only have to say so once.
+  const [showAll, setShowAll] = useState(() => {
+    try { return localStorage.getItem('career-lab-show-all') === '1'; } catch { return false; }
+  });
+  const toggleShowAll = () => setShowAll((v) => {
+    try { localStorage.setItem('career-lab-show-all', v ? '0' : '1'); } catch { /* private window */ }
+    return !v;
+  });
   const t = useT();
   const lang = useUILang();
   const head = (TITLES[pathname] ?? TITLES['/start'])(t);
@@ -103,18 +127,19 @@ export default function App() {
                 <span className="w-4 text-center text-base leading-none opacity-70 transition group-hover:opacity-100">{n.icon}</span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">{n.label(t)}</span>
-                  <span className="block truncate text-[11px] text-ink-400">{n.sub(t)}</span>
+                  <span className="block truncate text-[11px] text-ink-400">{locked ? n.opens(t) : n.sub(t)}</span>
                 </span>
-                {locked && <span className="text-[10px]">🔒</span>}
+                {locked && <span className="text-[10px] opacity-60" title={n.opens(t)}>🔒</span>}
               </NavLink>
             );
           })}
         </nav>
 
-        {hidden > 0 && (
-          <button onClick={() => setShowAll((v) => !v)} className="px-5 py-2 text-left text-[11px] text-ink-400 transition hover:text-ink-700">
-            {showAll ? t('Hide what I haven’t reached', 'Ocultar lo que todavía no usé')
-                     : t(`Show ${hidden} more section${hidden > 1 ? 's' : ''} →`, `Ver ${hidden} sección${hidden > 1 ? 'es' : ''} más →`)}
+        {(hidden > 0 || showAll) && (
+          <button onClick={toggleShowAll}
+                  className="mx-3 mb-2 rounded-lg border border-dashed border-line px-3 py-2 text-left text-[11px] text-ink-500 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700">
+            {showAll ? t('Show only what I’ve reached', 'Mostrar sólo lo que ya usé')
+                     : t(`Show all sections (${hidden} locked)`, `Ver todas las secciones (${hidden} bloqueadas)`)}
           </button>
         )}
 
