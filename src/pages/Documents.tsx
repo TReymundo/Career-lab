@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Area, Badge, Button, Card, Empty, Field, Select, SectionTitle } from '../components/ui.tsx';
 import { api, fmtDate } from '../lib/api.ts';
 import { useT, useUILang } from '../lib/i18n.ts';
+import Guide from '../components/Guide.tsx';
 import { TEMPLATES, buildCV, buildCover, keywordGap, missingTranslations, openPlaceholders, type TemplateId } from '../lib/templates.ts';
 import { coldOutreach, interviewDebrief, interviewPrep, tailoringPlan } from '../lib/tailor.ts';
 import { TRACKS, type Doc, type DocKind, type Lang, type Store, type Track } from '../lib/types.ts';
@@ -173,6 +174,23 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
 
   return (
     <div className="space-y-6">
+      <Guide
+        id="documents"
+        store={store}
+        reload={reload}
+        title={t('One job in, six documents out', 'Un aviso adentro, seis documentos afuera')}
+        body={t('Everything here is written from your CV and this specific posting.',
+                'Todo acá se escribe desde tu CV y este aviso en particular.')}
+        points={[
+          t('Pick the application at the top, then press “Generate everything” — CV, cover letter, a message to send someone, interview prep.',
+            'Elegí la postulación arriba, y apretá “Generar todo” — CV, carta, un mensaje para mandar, preparación de entrevista.'),
+          t('Read the Checks panel on the right before you send anything.',
+            'Leé el panel de Chequeos a la derecha antes de mandar nada.'),
+          t('Download DOCX for application forms, PDF for email.',
+            'Descargá DOCX para formularios, PDF para mail.'),
+        ]}
+      />
+
       {queue.length > 1 && (
         <Card className="flex flex-wrap items-center gap-3 border-brand-200 bg-brand-50 px-4 py-2.5 text-sm">
           <span className="font-medium text-brand-700">

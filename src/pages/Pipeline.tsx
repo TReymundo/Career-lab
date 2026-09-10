@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Area, Badge, Button, Card, Drawer, Empty, Field, Select, Toggle } from '../components/ui.tsx';
 import { api, daysUntil, fmtDate, today } from '../lib/api.ts';
 import { useT } from '../lib/i18n.ts';
+import Guide from '../components/Guide.tsx';
 import { LIVE_STATUSES, STATUSES, TRACKS, statusMeta, type Application, type Status, type Store, type Track } from '../lib/types.ts';
 
 const trackShort = (id: string) => TRACKS.find((t) => t.id === id)?.short ?? id;
@@ -59,6 +60,23 @@ export default function Pipeline({ store, reload }: { store: Store; reload: () =
 
   return (
     <div className="space-y-4">
+      <Guide
+        id="pipeline"
+        store={store}
+        reload={reload}
+        title={t('Where everything you applied to lives', 'Acá vive todo a lo que te postulaste')}
+        body={t('Every job you generate documents for lands in Saved. Drag it right as it moves.',
+                'Cada aviso para el que generás documentos aparece en Guardado. Arrastralo a la derecha a medida que avanza.')}
+        points={[
+          t('Saved → Tailored → Applied → Interviewing → Offer or Rejected.',
+            'Guardado → Adaptado → Postulado → Entrevistas → Oferta o Rechazo.'),
+          t('Open any card and give it a next action with a date — that is what stops things slipping.',
+            'Abrí cualquier tarjeta y ponele una próxima acción con fecha — eso es lo que evita que se te escape.'),
+          t('Take a backup now and then: the button is at the bottom of this screen.',
+            'Hacé una copia de vez en cuando: el botón está al final de esta pantalla.'),
+        ]}
+      />
+
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex overflow-hidden rounded-lg border border-line bg-surface">
           {(['board', 'list'] as const).map((v) => (
@@ -212,6 +230,32 @@ export default function Pipeline({ store, reload }: { store: Store; reload: () =
       )}
 
       {open && <Detail key={open.id} app={open} store={store} reload={reload} close={() => setOpenId(null)} />}
+
+      <BackupBar />
+    </div>
+  );
+}
+
+/** Everything lives in one file on one machine, so this belongs where the value accumulates. */
+function BackupBar() {
+  const t = useT();
+  const [msg, setMsg] = useState('');
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-line px-4 py-3 text-sm">
+      <span className="text-ink-500">
+        {t('All of this lives in one file on this computer.', 'Todo esto vive en un archivo en esta computadora.')}
+      </span>
+      <Button onClick={async () => {
+        const res = await fetch('/api/backup');
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `career-lab-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        setMsg(t('Downloaded — put it somewhere that is not this laptop.', 'Descargado — guardalo en algún lado que no sea esta computadora.'));
+      }}>{t('Download a backup', 'Descargar una copia')}</Button>
+      {msg && <span className="animate-fade text-brand-700">{msg}</span>}
     </div>
   );
 }

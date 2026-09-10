@@ -4,6 +4,7 @@ import { Area, Badge, Button, Card, Empty, Field, Select, SectionTitle } from '.
 import { api, fmtDate } from '../lib/api.ts';
 import { useT, useUILang } from '../lib/i18n.ts';
 import JobFinder from '../components/JobFinder.tsx';
+import Guide from '../components/Guide.tsx';
 import { buildCV, matchScore } from '../lib/templates.ts';
 import { TRACKS, type Job, type Lang, type SavedSearch, type Store, type Track } from '../lib/types.ts';
 
@@ -26,6 +27,7 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
   const [track, setTrack] = useState<Track>('finance');
   const [lang, setLang] = useState<Lang>(ui);
   const [showImport, setShowImport] = useState(false);
+  const [autoOpened, setAutoOpened] = useState(false);
 
   const load = useCallback(async () => {
     const res = await api.searchJobs({ q: applied, starred: starredOnly, dismissed: showDismissed, limit: 500 });
@@ -34,6 +36,11 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
   }, [applied, starredOnly, showDismissed]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // A first visit with an empty list should not require finding the import button.
+  useEffect(() => {
+    if (!autoOpened && total === 0 && rows.length === 0) { setShowImport(true); setAutoOpened(true); }
+  }, [total, rows.length, autoOpened]);
 
   // Scored against your master CV, so the ranking reflects what you can actually evidence.
   const cvText = useMemo(
@@ -76,6 +83,23 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
 
   return (
     <div className="space-y-5">
+      <Guide
+        id="jobs"
+        store={store}
+        reload={reload}
+        title={t('This is where openings come in', 'Acá entran las búsquedas')}
+        body={t('Nothing else works until there are jobs here. The fastest way is the first tab.',
+                'Nada más funciona hasta que haya avisos acá. Lo más rápido es la primera pestaña.')}
+        points={[
+          t('Open “Import jobs” → “Find jobs with AI” and press Suggest. It reads your CV and gives you searches, employers and titles.',
+            'Abrí “Importar avisos” → “Buscar avisos con IA” y apretá Sugerir. Lee tu CV y te da búsquedas, empresas y puestos.'),
+          t('Anything you find elsewhere: copy it, paste it, and the AI pulls the openings out.',
+            'Cualquier cosa que encuentres en otro lado: copiala, pegala, y la IA le saca los avisos.'),
+          t('Then tick the good ones and press Generate CV — that is the next screen.',
+            'Después marcá los buenos y apretá Generar CV — esa es la pantalla siguiente.'),
+        ]}
+      />
+
       <div className="flex flex-wrap items-end gap-3">
         <Field
           label={t('Search — every term must match, "quoted phrases" stay together, -word excludes',

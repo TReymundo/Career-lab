@@ -3,6 +3,7 @@ import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { useStore } from './lib/api.ts';
 import { setUILang, useT, useUILang } from './lib/i18n.ts';
 import { parseBullets, type Store } from './lib/types.ts';
+import Landing from './pages/Landing.tsx';
 import Start from './pages/Start.tsx';
 import Dashboard from './pages/Dashboard.tsx';
 import Jobs from './pages/Jobs.tsx';
@@ -20,7 +21,7 @@ import Inbox from './pages/Inbox.tsx';
 type T = (en: string, es: string) => string;
 
 const NAV = [
-  { to: '/start', icon: '◎', label: (t: T) => t('Start here', 'Empezá acá'), sub: (t: T) => t('The guided path', 'El camino guiado'),
+  { to: '/start', icon: '◎', label: (t: T) => t('Start here', 'Empezá acá'), sub: (t: T) => t('You and your CV', 'Vos y tu CV'),
     unlock: () => true, opens: (t: T) => '' },
   { to: '/profile', icon: '✎', label: (t: T) => t('My CV', 'Mi CV'), sub: (t: T) => t('Everything about you', 'Todo sobre vos'),
     unlock: (s: Store) => s.experience.length > 0,
@@ -49,7 +50,7 @@ const NAV = [
 ];
 
 const TITLES: Record<string, (t: T) => { title: string; sub: string }> = {
-  '/start': (t) => ({ title: t('Start here', 'Empezá acá'), sub: t('One step at a time. Nothing to figure out.', 'Un paso a la vez. Nada que adivinar.') }),
+  '/start': (t) => ({ title: t('Start here', 'Empezá acá'), sub: t('You and your CV. The rest has its own screens.', 'Vos y tu CV. El resto tiene sus propias pantallas.') }),
   '/profile': (t) => ({ title: t('My CV', 'Mi CV'), sub: t('Your history, written once, in one place', 'Tu historia, escrita una vez, en un solo lugar') }),
   '/jobs': (t) => ({ title: t('Jobs', 'Avisos'), sub: t('Bring openings in, search them, generate from them', 'Traé búsquedas, filtralas, generá desde ellas') }),
   '/documents': (t) => ({ title: t('Documents', 'Documentos'), sub: t('Tailored CVs, cover letters, outreach and interview prep', 'CVs a medida, cartas, mensajes y preparación de entrevistas') }),
@@ -87,6 +88,14 @@ export default function App() {
     );
   }
 
+  if (store && pathname === '/') {
+    return (
+      <div className="min-h-full px-6 py-10 md:py-16">
+        <Landing store={store} />
+      </div>
+    );
+  }
+
   if (!store) {
     return (
       <div className="flex min-h-full">
@@ -107,10 +116,10 @@ export default function App() {
   return (
     <div className="flex min-h-full">
       <aside className="no-print sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-line bg-surface md:flex">
-        <div className="flex items-center gap-2 px-5 py-5">
+        <NavLink to="/" className="flex items-center gap-2 px-5 py-5 transition hover:opacity-80">
           <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand-600 text-sm font-bold text-white">CL</span>
           <span className="text-[15px] font-semibold tracking-tight">Career<span className="text-brand-600">Lab</span></span>
-        </div>
+        </NavLink>
 
         <nav className="flex-1 space-y-0.5 px-3">
           {visible.map((n) => {
@@ -179,6 +188,7 @@ export default function App() {
         <main key={pathname} className="animate-rise px-6 py-6 md:px-8">
           <Routes>
             <Route path="/" element={<Navigate to="/start" replace />} />
+            <Route path="/home" element={<Navigate to="/" replace />} />
             <Route path="/start" element={<Start store={store} reload={reload} />} />
             <Route path="/dashboard" element={<Dashboard store={store} />} />
             <Route path="/jobs" element={<Jobs store={store} reload={reload} />} />

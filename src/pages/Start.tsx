@@ -147,8 +147,10 @@ const PHASES: Phase[] = [
                     'Opcional, y necesita tu propia clave de Google. Saltealo si preferís.'),
     done: (t) => ({
       headline: t('Sharpened.', 'Afinado.'),
-      body: t('Now the part that actually takes time: finding jobs worth applying to. The AI can plan that too.',
-              'Ahora la parte que de verdad lleva tiempo: encontrar avisos que valgan la pena. La IA también puede planificar eso.'),
+      body: t('Setup is finished. The next part — finding jobs — has its own screen, and the AI can plan it for you.',
+              'La configuración terminó. La parte que sigue — encontrar avisos — tiene su propia pantalla, y la IA puede planificarla.'),
+      cta: t('Find jobs →', 'Buscar avisos →'),
+      to: '/jobs',
     }),
     steps: [
       {
@@ -177,112 +179,6 @@ const PHASES: Phase[] = [
           'Un párrafo para el encabezado, una revisión honesta, y una pasada que corrige errores de tipeo y frases flojas — cada cambio se muestra antes de aplicarse.'),
         optional: true,
         render: (ctx) => <AIReview {...ctx} />,
-      },
-    ],
-  },
-  {
-    id: 'jobs',
-    title: (t) => t('Find jobs', 'Buscá avisos'),
-    blurb: (t) => t('Get openings into the app so you can search and rank them.',
-                    'Traé las búsquedas a la app para poder filtrarlas y ordenarlas.'),
-    done: (t) => ({
-      headline: t('You have jobs to work with.', 'Ya tenés avisos con qué trabajar.'),
-      body: t('Search and rank them, then tick the good ones and generate a tailored set of documents for each.',
-              'Filtralos y ordenalos, después marcá los buenos y generá documentos a medida para cada uno.'),
-      cta: t('Go to Jobs', 'Ir a Avisos'),
-      to: '/jobs',
-    }),
-    steps: [
-      {
-        id: 'linkedin',
-        title: (t) => t('Open LinkedIn and collect some jobs', 'Abrí LinkedIn y juntá avisos'),
-        help: (t) => t('Search, save what looks right, then bring them in. The buttons below do both halves.',
-                       'Buscá, guardá lo que te sirva, y después traelos. Los botones de abajo hacen las dos mitades.'),
-        auto: (s) => s.setting['step:linkedin'] === 'done' || false,
-        render: (ctx) => <JobsStep {...ctx} />,
-      },
-    ],
-  },
-  {
-    id: 'apply',
-    title: (t) => t('Apply', 'Postulate'),
-    blurb: (t) => t('Turn a job into a tailored set of documents you can actually send.',
-                    'Convertí un aviso en documentos hechos a medida que podés mandar.'),
-    done: (t) => ({
-      headline: t('Documents done.', 'Documentos listos.'),
-      body: t('Everything you generate is saved and exportable. What is left is keeping track of what you sent.',
-              'Todo lo que generás queda guardado y exportable. Lo que falta es seguir la pista de lo que mandaste.'),
-      cta: t('Open Documents', 'Abrir Documentos'),
-      to: '/documents',
-    }),
-    steps: [
-      {
-        id: 'generate',
-        title: (t) => t('Generate documents for a job', 'Generá los documentos para un aviso'),
-        help: (t) => t(
-          'Tick a job, press generate. You get a CV, a cover letter, a message to send someone, and interview prep for that posting.',
-          'Marcá un aviso y generá. Salen un CV, una carta, un mensaje para mandarle a alguien, y preparación de entrevista para ese puesto.'),
-        auto: (s) => s.document.length > 0,
-        render: (ctx) => (
-          <Steps to="/jobs" cta={ctx.t('Go to Jobs', 'Ir a Avisos')} points={[
-            ctx.t('Tick a job in the list, choose your language, press Generate CV.',
-                  'Marcá un aviso, elegí el idioma, apretá Generar CV.'),
-            ctx.t('In the generator, press "Generate full pack" to write everything at once.',
-                  'En el generador, apretá "Generar todo" para escribir todo junto.'),
-            ctx.t('Then Download DOCX for application forms, or PDF to email.',
-                  'Después descargá DOCX para formularios, o PDF para mandar por mail.'),
-          ]} />
-        ),
-      },
-      {
-        id: 'answers',
-        title: (t) => t('Write the answers forms keep asking for', 'Escribí las respuestas que todos los formularios piden'),
-        help: (t) => t('Why this firm, a leadership story, a failure story. Write each once and reuse it for months.',
-                       'Por qué esta empresa, una historia de liderazgo, una de fracaso. Escribilas una vez y reusalas meses.'),
-        optional: true,
-        auto: (s) => s.answer.filter((a) => !a.company && a.body.trim()).length >= 3,
-        render: (ctx) => (
-          <Steps to="/answers" cta={ctx.t('Open Answer bank', 'Abrir Respuestas')} points={[
-            ctx.t('Start with the first three. Each has a word limit and a note on what a good answer does.',
-                  'Empezá por las primeras tres. Cada una tiene límite de palabras y una nota sobre qué hace una buena respuesta.'),
-          ]} />
-        ),
-      },
-    ],
-  },
-  {
-    id: 'track',
-    title: (t) => t('Keep track', 'Seguí el hilo'),
-    blurb: (t) => t('So nothing slips while you are busy.', 'Para que no se te escape nada mientras estás ocupado.'),
-    done: (t) => ({
-      headline: t('Setup is finished.', 'La configuración terminó.'),
-      body: t('From here it is the work itself: search, generate, send, follow up. The board is where you live now.',
-              'De acá en más es el trabajo en sí: buscar, generar, enviar, hacer seguimiento. El tablero es tu lugar ahora.'),
-      cta: t('Open the board', 'Abrir el tablero'),
-      to: '/pipeline',
-    }),
-    steps: [
-      {
-        id: 'pipeline',
-        title: (t) => t('Move things across the board', 'Movelo por el tablero'),
-        help: (t) => t('Every job you generate for lands on the board. Drag it as it moves; the dates and the log look after themselves.',
-                       'Cada aviso para el que generás aparece en el tablero. Arrastralo a medida que avanza; las fechas y el historial se cuidan solos.'),
-        auto: (s) => s.application.some((a) => a.status !== 'saved'),
-        render: (ctx) => (
-          <Steps to="/pipeline" cta={ctx.t('Open Pipeline', 'Abrir Tablero')} points={[
-            ctx.t('Saved → Tailored → Applied → Interviewing → Offer or Rejected.',
-                  'Guardado → Adaptado → Postulado → Entrevistas → Oferta o Rechazo.'),
-            ctx.t('Give anything live a next action with a date.', 'Dale a cada proceso activo una próxima acción con fecha.'),
-          ]} />
-        ),
-      },
-      {
-        id: 'backup',
-        title: (t) => t('Back it up', 'Hacé una copia'),
-        help: (t) => t('It all lives in one file on this laptop. Download a copy and put it somewhere else.',
-                       'Todo vive en un archivo en esta computadora. Bajate una copia y guardala en otro lado.'),
-        auto: (s) => s.setting['step:backup'] === 'done',
-        render: (ctx) => <BackupStep {...ctx} />,
       },
     ],
   },
@@ -318,11 +214,13 @@ export default function Start({ store, reload }: { store: Store; reload: () => P
               {doneCount}<span className="text-ink-400">/{ALL_STEPS.length}</span>
             </p>
             <p className="text-sm text-ink-500">
-              {t('Work down the list. Each step saves, ticks itself off, and opens the next one.',
-                 'Bajá por la lista. Cada paso se guarda, se tacha solo, y abre el siguiente.')}
+              {t('This screen is only about you and your CV. Finding jobs, applying and tracking each have their own screen, and open as you get there.',
+                 'Esta pantalla es sólo sobre vos y tu CV. Buscar avisos, postularte y hacer seguimiento tienen su propia pantalla, y se abren cuando llegás.')}
             </p>
           </div>
-          {doneCount === ALL_STEPS.length && <Badge tone="emerald">{t('All done — the rest is applying', 'Listo — lo que queda es postularse')}</Badge>}
+          {doneCount === ALL_STEPS.length && (
+            <Link to="/jobs"><Button variant="primary">{t('Setup done → find jobs', 'Listo → buscar avisos')}</Button></Link>
+          )}
         </div>
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-sunken">
           <div className="h-full rounded-full bg-brand-500 transition-all duration-500" style={{ width: `${(doneCount / ALL_STEPS.length) * 100}%` }} />
@@ -1155,69 +1053,6 @@ function AIReview({ store, reload, done, next, t, lang }: Ctx) {
           )}
         </Card>
       )}
-    </div>
-  );
-}
-
-function JobsStep({ store, reload, done, next, t }: Ctx) {
-  return (
-    <div className="space-y-4">
-      <JobFinder store={store} onDone={async () => { await reload(); done('linkedin'); }} />
-
-      <details className="rounded-lg border border-line bg-sunken/60 px-3 py-2 text-sm">
-        <summary className="cursor-pointer font-medium text-ink-900">
-          {t('Or do it by hand on LinkedIn', 'O hacelo a mano en LinkedIn')}
-        </summary>
-        <div className="mt-3 space-y-3">
-      <div className="flex flex-wrap gap-2">
-        <a href="https://www.linkedin.com/jobs/" target="_blank" rel="noreferrer">
-          <Button variant="primary">{t('1. Open LinkedIn jobs ↗', '1. Abrir avisos de LinkedIn ↗')}</Button>
-        </a>
-        <a href="https://www.linkedin.com/mypreferences/d/download-my-data" target="_blank" rel="noreferrer">
-          <Button variant="soft">{t('2. Request my LinkedIn data ↗', '2. Pedir mis datos de LinkedIn ↗')}</Button>
-        </a>
-        <Link to="/jobs"><Button>{t('3. Import them here', '3. Importarlos acá')}</Button></Link>
-      </div>
-      <ul className="space-y-1.5 text-sm text-ink-700">
-        <li className="flex gap-2"><span className="text-brand-500">→</span>
-          <span>{t('Search on LinkedIn and press Save on anything that looks right. Twenty is plenty to start.',
-                   'Buscá en LinkedIn y guardá lo que te sirva. Con veinte alcanza para empezar.')}</span></li>
-        <li className="flex gap-2"><span className="text-brand-500">→</span>
-          <span>{t('Request your data export — it arrives by email, sometimes in minutes. The file you want is Saved Jobs.csv.',
-                   'Pedí la exportación de tus datos — llega por mail, a veces en minutos. El archivo que querés es Saved Jobs.csv.')}</span></li>
-        <li className="flex gap-2"><span className="text-brand-500">→</span>
-          <span>{t('In a hurry? On the Jobs screen you can paste a search results page straight in.',
-                   '¿Apurado? En Avisos podés pegar una página de resultados directamente.')}</span></li>
-      </ul>
-        </div>
-      </details>
-
-      <Button variant="ghost" onClick={() => { done('linkedin'); next(); }}>{t('I’ve got jobs in →', 'Ya tengo avisos →')}</Button>
-    </div>
-  );
-}
-
-function BackupStep({ reload, done, next, t }: Ctx) {
-  const [msg, setMsg] = useState('');
-  return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap gap-2">
-        <Button variant="primary" onClick={async () => {
-          const res = await fetch('/api/backup');
-          const blob = await res.blob();
-          const a = document.createElement('a');
-          a.href = URL.createObjectURL(blob);
-          a.download = `career-lab-backup-${new Date().toISOString().slice(0, 10)}.json`;
-          a.click();
-          URL.revokeObjectURL(a.href);
-          await api.setSetting('step:backup', 'done');
-          await reload();
-          done('backup');
-          setMsg(t('Downloaded. Put it somewhere that is not this laptop.', 'Descargado. Guardalo en algún lado que no sea esta computadora.'));
-        }}>{t('Download a backup', 'Descargar una copia')}</Button>
-        <Button variant="ghost" onClick={next}>{t('Continue →', 'Continuar →')}</Button>
-      </div>
-      {msg && <p className="text-sm text-brand-700">{msg}</p>}
     </div>
   );
 }

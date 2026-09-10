@@ -24,21 +24,23 @@ Either way, open http://localhost:5273 and follow **Start here**. That is the wh
 
 `npm run reset` empties everything if you want to begin again from scratch.
 
-## Start here — the guided path
+## How it is laid out
 
-Fourteen steps in six phases. Each one says what to do in a sentence, does the work inline,
-and crosses itself off when you save, opening the next one automatically. The sidebar starts
-with a single item and reveals sections only as you reach them, so you are never looking at a
-screen of tabs you have no use for yet.
+The work is split so that each screen is one idea, and screens appear only when you reach them.
+
+**Start here** is you and your CV, and nothing else — three phases of short steps that save,
+cross themselves off, and open the next one:
 
 | Phase | What happens |
 | --- | --- |
 | **1 · Who you are** | Name, contact details, and what kind of work you are going for. |
-| **2 · Build your CV** | Upload a CV you already have, or build one from nothing — then make sure every line has a number in it. |
-| **3 · Sharpen it with AI** | Optional. With your own Google API key: rewrite your bullets, write your profile paragraph, review the whole CV. |
-| **4 · Find jobs** | Buttons that take you to LinkedIn to search and to request your data export, then bring the results in. |
-| **5 · Apply** | Generate a tailored document pack for a job, and write the answers forms keep asking for. |
-| **6 · Keep track** | Move applications across the board, and take a backup. |
+| **2 · Build your CV** | Upload a CV you already have, or build one from nothing — then the things recruiters look for, then a number in every line. |
+| **3 · Sharpen it with AI** | Optional, with your own Google key: rewrite lines, write your profile paragraph, review and correct the whole CV. |
+
+Everything after that has its own screen, each opening with a short guide that dismisses once
+you know it: **Jobs** for finding openings, **Documents** for generating what you send,
+**Pipeline** for tracking it. The sidebar shows only what you have reached; locked entries say
+what opens them, and one toggle reveals everything for good.
 
 ### If you have no experience
 

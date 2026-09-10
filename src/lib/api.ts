@@ -99,7 +99,7 @@ export interface BulletSuggestion { original: string; improved: string; why: str
 export interface FieldItem { target: string; label: string; value: string }
 export interface SourcePlan {
   queries: { label: string; keywords: string; location: string }[];
-  companies: { name: string; slug: string; why: string }[];
+  companies: { name: string; slug: string; why: string; board?: boolean }[];
   titles: string[];
 }
 export interface FieldEdit { target: string; label: string; from: string; to: string; why: string }

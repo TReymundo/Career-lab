@@ -65,6 +65,36 @@ export default function JobFinder({ store, onDone }: { store: Store; onDone: () 
   const linkedinUrl = (q: { keywords: string; location: string }) =>
     `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(q.keywords)}&location=${encodeURIComponent(q.location)}`;
 
+  /** Always available, whether or not the company publishes a machine-readable board. */
+  const companySearchUrl = (name: string) =>
+    `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(name)}&location=${encodeURIComponent(store.profile.location || '')}`;
+
+  /** One press instead of fourteen: attempt every suggested board and report the total. */
+  const tryAllBoards = async () => {
+    if (!plan?.companies?.length) return;
+    setBusy('boards');
+    let added = 0;
+    let found = 0;
+    for (const c of plan.companies) {
+      setFetched((f) => ({ ...f, [c.name]: t('checking…', 'buscando…') }));
+      try {
+        const res = await api.fetchAts('auto', c.slug || c.name);
+        added += res.inserted;
+        found++;
+        setFetched((f) => ({ ...f, [c.name]: t(`${res.inserted} added`, `${res.inserted} agregados`) }));
+      } catch {
+        setFetched((f) => ({ ...f, [c.name]: t('no public board', 'sin board público') }));
+      }
+    }
+    setBusy('');
+    setMsg(added > 0
+      ? t(`${added} openings added from ${found} board${found === 1 ? '' : 's'}. For the rest, use their LinkedIn link.`,
+          `${added} avisos agregados desde ${found} board${found === 1 ? '' : 's'}. Para el resto, usá su link de LinkedIn.`)
+      : t('None of these publish a machine-readable board — use the LinkedIn link on each one instead. That is normal outside tech.',
+          'Ninguna publica un board legible por máquina — usá el link de LinkedIn de cada una. Es lo normal fuera de tecnología.'));
+    await onDone();
+  };
+
   return (
     <div className="space-y-5">
       <div className="rounded-xl border border-brand-200 bg-brand-50/60 p-4">
@@ -127,25 +157,41 @@ export default function JobFinder({ store, onDone }: { store: Store; onDone: () 
 
           {plan.companies?.length > 0 && (
             <div>
-              <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-ink-500">
-                {t('Employers worth checking — try each public board', 'Empresas para mirar — probá cada board público')}
-              </p>
+              <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                <p className="text-[11px] font-medium uppercase tracking-wider text-ink-500">
+                  {t('Employers worth checking', 'Empresas para mirar')}
+                </p>
+                <Button className="ml-auto" disabled={busy !== ''} onClick={tryAllBoards}>
+                  {busy === 'boards' ? t('Checking all…', 'Probando todas…') : t('Try every board at once', 'Probar todos los boards')}
+                </Button>
+              </div>
               <div className="grid gap-2 sm:grid-cols-2">
-                {plan.companies.map((c) => (
-                  <div key={c.name} className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-ink-900">{c.name}</p>
-                      <p className="truncate text-xs text-ink-500">{c.why}</p>
+                {plan.companies.map((c) => {
+                  const state = fetched[c.name];
+                  const worked = state && /added|agregados/.test(state) && !state.startsWith('0');
+                  return (
+                    <div key={c.name} className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-ink-900">{c.name}</p>
+                        <p className="truncate text-xs text-ink-500">{c.why}</p>
+                      </div>
+                      {state
+                        ? <Badge tone={worked ? 'emerald' : 'slate'}>{state}</Badge>
+                        : c.board !== false
+                          ? <Button onClick={() => tryBoard(c.name, c.slug)}>{t('Try', 'Probar')}</Button>
+                          : null}
+                      <a href={companySearchUrl(c.name)} target="_blank" rel="noreferrer"
+                         title={t('Search their jobs on LinkedIn', 'Buscar sus avisos en LinkedIn')}
+                         className="shrink-0 rounded-md px-2 py-1 text-xs text-brand-700 transition hover:bg-brand-50">
+                        in ↗
+                      </a>
                     </div>
-                    {fetched[c.name]
-                      ? <Badge tone={fetched[c.name].includes('added') || fetched[c.name].includes('agregados') ? 'emerald' : 'slate'}>{fetched[c.name]}</Badge>
-                      : <Button onClick={() => tryBoard(c.name, c.slug)}>{t('Try', 'Probar')}</Button>}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               <p className="mt-2 text-xs text-ink-400">
-                {t('“No public board” is normal — most banks, consultancies and local employers run their own careers sites. Use the searches above for those.',
-                   '“Sin board público” es normal — la mayoría de los bancos, consultoras y empresas locales tienen su propio sitio. Para esas, usá las búsquedas de arriba.')}
+                {t('Only technology companies tend to publish a machine-readable board, so “no public board” is the normal answer for banks, consultancies and local employers. The “in ↗” link next to every company searches their openings on LinkedIn, which always works.',
+                   'Sólo las empresas de tecnología suelen publicar un board legible por máquina, así que “sin board público” es la respuesta normal para bancos, consultoras y empresas locales. El link “in ↗” al lado de cada empresa busca sus avisos en LinkedIn, y eso siempre funciona.')}
               </p>
             </div>
           )}

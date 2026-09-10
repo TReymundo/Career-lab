@@ -41,7 +41,15 @@ interface CallOptions {
   maxTokens?: number;
 }
 
-async function callGemini(prompt: string, { system, schema, maxTokens = 8192 }: CallOptions): Promise<string> {
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Google returns 503 when the model is busy and 429 when you are going too fast. Both are
+ * temporary and both used to surface as a wall of raw JSON, so they are retried here with a
+ * short backoff before anyone is told anything went wrong.
+ */
+async function callGemini(prompt: string, opts: CallOptions, attempt = 0): Promise<string> {
+  const { system, schema, maxTokens = 8192 } = opts;
   const key = getKey();
   if (!key) throw new Error('No Google API key set. Add one in the AI step, or put GOOGLE_API_KEY in your .env file.');
 
@@ -65,8 +73,15 @@ async function callGemini(prompt: string, { system, schema, maxTokens = 8192 }: 
   if (!res.ok) {
     const body = await res.text();
     if (res.status === 400 && /API key not valid/i.test(body)) throw new Error('That API key was rejected by Google. Check it and try again.');
-    if (res.status === 429) throw new Error('Google rate-limited the request. Wait a minute and try again.');
-    throw new Error(`Google returned ${res.status}. ${body.slice(0, 300)}`);
+
+    if ((res.status === 503 || res.status === 429) && attempt < 2) {
+      await sleep(1500 * (attempt + 1));
+      return callGemini(prompt, opts, attempt + 1);
+    }
+    if (res.status === 503) throw new Error('Google’s model is busy right now — that is on their side, not yours. Give it a minute and press the button again.');
+    if (res.status === 429) throw new Error('Google is rate-limiting your key. Wait a minute and try again.');
+    if (res.status === 403) throw new Error('Google refused the key. Check that the Generative Language API is enabled for it.');
+    throw new Error(`Google returned ${res.status}. ${body.replace(/\s+/g, ' ').slice(0, 200)}`);
   }
 
   const data = await res.json() as {
@@ -274,7 +289,7 @@ export async function freeform(prompt: string, lang: Lang = 'en') {
  */
 export interface SourcePlan {
   queries: { label: string; keywords: string; location: string }[];
-  companies: { name: string; slug: string; why: string }[];
+  companies: { name: string; slug: string; why: string; board: boolean }[];
   titles: string[];
 }
 
@@ -293,8 +308,13 @@ const SOURCE_SCHEMA: Schema = {
       type: 'array',
       items: {
         type: 'object',
-        properties: { name: { type: 'string' }, slug: { type: 'string' }, why: { type: 'string' } },
-        required: ['name', 'slug', 'why'],
+        properties: {
+          name: { type: 'string' },
+          slug: { type: 'string' },
+          why: { type: 'string' },
+          board: { type: 'boolean' },
+        },
+        required: ['name', 'slug', 'why', 'board'],
       },
     },
     titles: { type: 'array', items: { type: 'string' } },
@@ -314,10 +334,15 @@ Areas they are targeting: ${input.tracks || 'not specified'}
 Where they are based: ${input.location || 'not specified'}
 ${input.keywords ? `Things they specifically want included: ${input.keywords}` : ''}
 
-Produce three things:
+Produce all three of the following. None may be empty.
+
 1. "queries" — 6 to 8 job-board searches, each a realistic keyword string someone would type, plus a location. Vary seniority wording (intern, junior, graduate, analyst, trainee, entry level) and vary the angle: some by role name, some by skill, some by industry. Include at least one remote-friendly search. Write labels in the user's language.
-2. "companies" — 10 to 14 real, currently-operating employers who plausibly hire this profile in that location or remotely. Mix large and small. For "slug", give the lowercase single-word form of the company name most likely used in a careers URL (e.g. "Mercado Libre" → "mercadolibre"). "why" is at most ten words on why they fit this person.
-3. "titles" — 8 job titles this person is genuinely qualified to apply for today, given the experience shown.
+2. "companies" — 10 to 14 real, currently-operating employers who plausibly hire this profile in that location or remotely.
+   - Include at least five technology, startup or fintech companies, because only those tend to publish machine-readable job boards.
+   - Set "board" to true ONLY for companies you believe post on Greenhouse, Lever or Ashby — typically venture-backed technology companies. Set it to false for banks, consultancies, universities, government and traditional local employers, which run their own careers sites.
+   - For "slug", give the lowercase single-word form most likely used in a careers URL (e.g. "Mercado Libre" → "mercadolibre").
+   - "why" is at most ten words on why they fit this person.
+3. "titles" — REQUIRED, never empty: 8 job titles this person is genuinely qualified to apply for today, given the experience shown. Short titles only, no company names.
 
 Never invent a job posting, a URL, or a vacancy. Only search terms, company names and job titles.`;
 
