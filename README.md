@@ -7,6 +7,15 @@ Built around one idea: you keep **one** set of facts about yourself, tag each CV
 the tracks it sells (Markets / IB / Consulting / Product), and the app assembles the right
 document per application instead of you maintaining five diverging Word files.
 
+## New here? Open **Start here**
+
+The first screen in the sidebar is a fourteen-step guided path. Each step says what to do, why
+it matters and roughly how long it takes, does the work inline where it can, and ticks itself
+off from your actual data. It assumes nothing: step one imports a CV you already have, or
+accepts that you have none and builds one from scratch — including a bullet writer for people
+who think they have no experience yet (coursework, clubs, tutoring, sport and a family business
+all count, and it shows you how to write each one so a recruiter reads it that way).
+
 ## Running it
 
 ```bash
@@ -35,8 +44,11 @@ It is gitignored, so the database never leaves your machine.
 | **Pipeline** | Kanban board and list: `Saved → Tailored → Applied → Interviewing → Offer / Rejected`, drag to move, bulk actions, activity log. |
 | **Network** | Every person you speak to, with a follow-up date. Referrals move these processes more than applications do. |
 | **Master CV** | Your identity block and every experience entry, bilingual, with bullets tagged per track. |
-| **Documents** | Five artifacts per application: CV, cover letter, outreach DM, interview prep sheet, tailoring plan. |
+| **Documents** | Six artifacts per application: CV, cover letter, outreach DM, interview prep sheet, tailoring plan, interview debrief — exported as DOCX or PDF. |
+| **Answer bank** | The eleven questions application forms actually ask, written once and reused, with word limits and coaching notes. |
 | **Inbox sync** | Scans recruiter email over IMAP in English and Spanish and *proposes* status moves. |
+
+The sidebar's **Start here** sits above all of these and walks you through them in order.
 
 ## Getting jobs in — and why not straight from LinkedIn
 
@@ -130,6 +142,31 @@ stored in the database. Copy `.env.example` to `.env` and fill it in; only the A
 your machine reads it. For Gmail use an app password (Google Account → Security → 2-Step
 Verification → App passwords), never your account password.
 
+## Exporting real files
+
+Nothing accepts Markdown. Every document exports as **DOCX** (use this for application forms —
+most parsers read Word more reliably than PDF) and **PDF** (for anything you email or hand over),
+named the way a recruiter's download folder should look: `Perez_Tomas_CV_JPMorgan_EN.docx`.
+Accents are transliterated, because filenames travel through systems that mangle them.
+
+## The answer bank
+
+Forms, not CVs, are where the hours go. The bank holds the eleven questions that recur across
+graduate applications — why this firm, why this division, leadership, failure, achievement,
+conflict, pressure, strengths and weaknesses, a market view, an open motivation statement —
+each with its typical word limit, a live word counter that turns red when you go over, and a
+coaching note on what a good answer does.
+
+Answers with no company attached are your reusable masters. Pick a company and you write a
+variant only where the question genuinely demands one; anything you leave blank there falls
+back to the master.
+
+## Backup
+
+**Start here → Take a backup** downloads every table as one JSON file, and restores from one.
+Everything otherwise lives in a single SQLite file on a single laptop, which is fine right up
+until it isn't.
+
 ## How the track tagging works
 
 On **Master CV**, each bullet has track chips. A bullet with **no** chips appears on every
@@ -156,19 +193,22 @@ server/
   index.ts     REST API — generic CRUD over a whitelist of tables, job search, import, email
   jobs.ts      CSV/TSV parsing, LinkedIn archive import, public ATS board fetching
   email.ts     IMAP scanning, EN/ES recruiter-email rules, proposal application
+  export.ts    Markdown → DOCX and PDF, plus recruiter-friendly file naming
+  cvimport.ts  reads an existing CV (.docx / text) into the Master CV
   seed.ts      one-time starting skeleton
 src/
   lib/types.ts      shared types, tracks, statuses
   lib/api.ts        fetch client + the single store hook
   lib/templates.ts  the CV / cover-letter engine, templates, EN/ES copy, match scoring
-  lib/tailor.ts     tailoring plan, cold outreach, interview prep generation
-  pages/            Dashboard, Jobs, Pipeline, Contacts, Profile, Documents, Inbox
+  lib/tailor.ts     tailoring plan, cold outreach, interview prep and debrief generation
+  lib/questions.ts  the standard application-form questions, limits and coaching notes
+  pages/            Start, Dashboard, Jobs, Pipeline, Contacts, Profile, Documents, Answers, Inbox
   components/ui.tsx the component kit, drawer, and the two chart shapes
 ```
 
 Tables: `job` (the openings list), `profile` + `experience` (the master CV), `application`,
 `contact`, `document` (every generated artifact, `kind` = cv/cover/outreach/prep/plan),
-`event` (the activity log), `saved_search`. CV templates live in code, in
+`event` (the activity log), `saved_search`, `answer` (the answer bank), `setting` (guided-path state). CV templates live in code, in
 `src/lib/templates.ts`, rather than in a table — they are layout logic, not data.
 
 The API takes `API_PORT` (not `PORT` — dev runners inject that for the web server).

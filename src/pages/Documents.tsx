@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Area, Badge, Button, Card, Empty, Field, Select, SectionTitle } from '../components/ui.tsx';
 import { api, fmtDate } from '../lib/api.ts';
 import { TEMPLATES, buildCV, buildCover, keywordGap, missingTranslations, openPlaceholders, type TemplateId } from '../lib/templates.ts';
-import { coldOutreach, interviewPrep, tailoringPlan } from '../lib/tailor.ts';
+import { coldOutreach, interviewDebrief, interviewPrep, tailoringPlan } from '../lib/tailor.ts';
 import { TRACKS, type Doc, type DocKind, type Lang, type Store, type Track } from '../lib/types.ts';
 
 /** Minimal markdown → HTML for the preview. Handles exactly what the generators emit. */
@@ -39,9 +39,10 @@ const KINDS: { id: DocKind; label: string; es: string }[] = [
   { id: 'outreach', label: 'Cold outreach DM', es: 'Mensaje en frío' },
   { id: 'prep', label: 'Interview prep sheet', es: 'Hoja de entrevista' },
   { id: 'plan', label: 'Tailoring plan', es: 'Plan de adaptación' },
+  { id: 'debrief', label: 'Interview debrief', es: 'Debrief de entrevista' },
 ];
 
-const KIND_TONE: Record<string, string> = { cv: 'sky', cover: 'violet', outreach: 'amber', prep: 'emerald', plan: 'green' };
+const KIND_TONE: Record<string, string> = { cv: 'sky', cover: 'violet', outreach: 'amber', prep: 'emerald', plan: 'green', debrief: 'cyan' };
 const PACK: DocKind[] = ['cv', 'cover', 'outreach', 'prep', 'plan'];
 
 export default function Documents({ store, reload }: { store: Store; reload: () => Promise<void> }) {
@@ -64,6 +65,8 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
   const [body, setBody] = useState('');
   const [touched, setTouched] = useState(false);
   const [batchMsg, setBatchMsg] = useState('');
+  const [exporting, setExporting] = useState('');
+  const [exportMsg, setExportMsg] = useState('');
 
   const app = store.application.find((a) => a.id === appId) ?? null;
 
@@ -81,6 +84,7 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
     if (k === 'cover') return buildCover({ profile: store.profile, app: a, lang, hook, proof, contact });
     if (k === 'outreach') return coldOutreach(store.profile, a, contact, lang);
     if (k === 'prep') return interviewPrep(a, store.experience, lang);
+    if (k === 'debrief') return interviewDebrief(a, lang);
     return tailoringPlan(a, store.experience, cvText, lang);
   };
 
@@ -137,6 +141,23 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
     }
     await reload();
     setBatchMsg(`${n} documents saved across ${targets.length} application${targets.length > 1 ? 's' : ''}. Those rows moved to Tailored.`);
+  };
+
+  /** DOCX for forms, PDF for humans. Both come back named for a recruiter's download folder. */
+  const download = async (format: 'pdf' | 'docx') => {
+    setExporting(format);
+    setExportMsg('');
+    try {
+      const name = await api.exportFile({
+        markdown: text, format, kind, company: app?.company, lang, name: store.profile.name,
+      });
+      setExportMsg(`Saved ${name}`);
+      await api.setSetting('step:export', 'done');
+      await reload();
+    } catch (e) {
+      setExportMsg(e instanceof Error ? e.message : String(e));
+    }
+    setExporting('');
   };
 
   const stepTo = (i: number) => {
@@ -230,6 +251,12 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
           <Area rows={24} value={text} onChange={(e) => { setTouched(true); setBody(e.target.value); }} className="font-mono text-[13px]" />
           <div className="no-print mt-2 flex flex-wrap gap-2">
             <Button onClick={() => navigator.clipboard.writeText(text)}>Copy</Button>
+            <Button variant="primary" disabled={exporting !== ''} onClick={() => download('docx')}>
+              {exporting === 'docx' ? 'Building…' : 'Download DOCX'}
+            </Button>
+            <Button variant="soft" disabled={exporting !== ''} onClick={() => download('pdf')}>
+              {exporting === 'pdf' ? 'Building…' : 'Download PDF'}
+            </Button>
             <Button onClick={() => {
               const blob = new Blob([text], { type: 'text/markdown' });
               const a = document.createElement('a');
@@ -237,8 +264,9 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
               a.download = `${kind}-${app?.company ?? track}-${lang}.md`.replace(/\s+/g, '-').toLowerCase();
               a.click();
               URL.revokeObjectURL(a.href);
-            }}>Download .md</Button>
-            <Button onClick={() => window.print()}>Print / PDF</Button>
+            }}>.md</Button>
+            <Button onClick={() => window.print()}>Print</Button>
+            {exportMsg && <span className="animate-fade self-center text-sm text-brand-700">{exportMsg}</span>}
           </div>
         </div>
 

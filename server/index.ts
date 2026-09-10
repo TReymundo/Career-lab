@@ -5,6 +5,8 @@ import { existsSync } from 'node:fs';
 import { db, dbPath } from './db.ts';
 import { ATS, fetchAts, importDelimited, importLinkedInProfile, importPastedBlocks } from './jobs.ts';
 import { applyProposal, emailConfigured, scanMailbox, type Proposal } from './email.ts';
+import { fileName, toDocx, toPdf } from './export.ts';
+import { applyParsedCV, docxToText, parseCV } from './cvimport.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -12,7 +14,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 try { process.loadEnvFile(resolve(root, '.env')); } catch { /* no .env yet, which is fine */ }
 
 const app = express();
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '12mb' }));  // base64 CV uploads and full restores travel this way
 
 /** Columns we allow writes to, per table. Anything else in a payload is ignored. */
 const TABLES = {
@@ -23,6 +25,7 @@ const TABLES = {
   document: ['application_id', 'kind', 'title', 'body'],
   job: ['source','external_id','company','title','location','url','posted_on','description','track','starred','dismissed','application_id'],
   saved_search: ['name', 'terms', 'exclude'],
+  answer: ['slug','question','body','body_es','word_limit','company','track','times_used'],
 } as const;
 
 type Table = keyof typeof TABLES;
@@ -34,6 +37,7 @@ const ORDER: Record<Table, string> = {
   document: 'created_at DESC, id DESC',
   job: 'starred DESC, imported_at DESC, id DESC',
   saved_search: 'name COLLATE NOCASE ASC',
+  answer: 'company ASC, slug ASC, id DESC',
 };
 
 const isTable = (t: string): t is Table => Object.hasOwn(TABLES, t);
@@ -109,7 +113,91 @@ app.get('/api/all', (_req, res) => {
     event: db.prepare(`SELECT * FROM event ORDER BY ${ORDER.event}`).all(),
     document: db.prepare(`SELECT * FROM document ORDER BY ${ORDER.document}`).all(),
     saved_search: db.prepare(`SELECT * FROM saved_search ORDER BY ${ORDER.saved_search}`).all(),
+    answer: db.prepare(`SELECT * FROM answer ORDER BY ${ORDER.answer}`).all(),
+    setting: Object.fromEntries(
+      (db.prepare('SELECT key, value FROM setting').all() as { key: string; value: string }[])
+        .map((r) => [r.key, r.value]),
+    ),
   });
+});
+
+app.put('/api/setting/:key', (req, res) => {
+  db.prepare('INSERT INTO setting (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+    .run(req.params.key, String(req.body?.value ?? ''));
+  res.json({ ok: true });
+});
+
+/** Real files, because no application form accepts Markdown. */
+app.post('/api/export', async (req, res) => {
+  const { markdown, format, kind, company, lang, name } = req.body ?? {};
+  if (typeof markdown !== 'string' || !markdown.trim()) return res.status(400).json({ error: 'nothing to export' });
+  const ext = format === 'pdf' ? 'pdf' : 'docx';
+  try {
+    const buf = ext === 'pdf' ? await toPdf(markdown) : await toDocx(markdown);
+    const filename = fileName({ name: String(name ?? ''), kind: String(kind ?? 'cv'), company: String(company ?? ''), lang: String(lang ?? 'en'), ext });
+    res.setHeader('Content-Type', ext === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buf);
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+/** Parse an existing CV. Returns what it found; nothing is written until you confirm. */
+app.post('/api/cv/parse', async (req, res) => {
+  const { text, base64, filename } = req.body ?? {};
+  try {
+    let raw = typeof text === 'string' ? text : '';
+    if (!raw && typeof base64 === 'string') {
+      const buf = Buffer.from(base64, 'base64');
+      raw = String(filename ?? '').toLowerCase().endsWith('.docx') ? await docxToText(buf) : buf.toString('utf8');
+    }
+    if (!raw.trim()) return res.status(400).json({ error: 'nothing to read' });
+    res.json({ parsed: parseCV(raw), chars: raw.length });
+  } catch (e) {
+    res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+app.post('/api/cv/apply', (req, res) => {
+  const { parsed, replaceExisting } = req.body ?? {};
+  if (!parsed) return res.status(400).json({ error: 'nothing to apply' });
+  res.json(applyParsedCV(parsed, Boolean(replaceExisting)));
+});
+
+/** One JSON file with everything, so a dead laptop is an inconvenience and not a disaster. */
+app.get('/api/backup', (_req, res) => {
+  const tables = ['profile','experience','application','contact','event','document','job','saved_search','answer','setting'];
+  const data = Object.fromEntries(tables.map((t) => [t, db.prepare(`SELECT * FROM ${t}`).all()]));
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="career-lab-backup-${new Date().toISOString().slice(0, 10)}.json"`);
+  res.send(JSON.stringify({ version: 3, exported_at: new Date().toISOString(), data }, null, 2));
+});
+
+app.post('/api/restore', (req, res) => {
+  const data = req.body?.data;
+  if (!data || typeof data !== 'object') return res.status(400).json({ error: 'not a backup file' });
+  const counts: Record<string, number> = {};
+  try {
+    for (const [table, rows] of Object.entries(data as Record<string, Record<string, unknown>[]>)) {
+      if (!Array.isArray(rows) || !rows.length) continue;
+      if (table === 'profile') {
+        const p = rows[0];
+        const cols = Object.keys(p).filter((c) => c !== 'id');
+        db.prepare(`UPDATE profile SET ${cols.map((c) => `${c} = ?`).join(', ')} WHERE id = 1`).run(...cols.map((c) => p[c] as string));
+        counts.profile = 1;
+        continue;
+      }
+      db.prepare(`DELETE FROM ${table}`).run();
+      const cols = Object.keys(rows[0]);
+      const stmt = db.prepare(`INSERT INTO ${table} (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`);
+      for (const row of rows) stmt.run(...cols.map((c) => (row[c] ?? null) as string | number | null));
+      counts[table] = rows.length;
+    }
+    res.json({ restored: counts });
+  } catch (e) {
+    res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+  }
 });
 
 /**

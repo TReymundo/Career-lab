@@ -1,25 +1,31 @@
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { daysUntil, useStore } from './lib/api.ts';
 import { LIVE_STATUSES } from './lib/types.ts';
+import Start from './pages/Start.tsx';
 import Dashboard from './pages/Dashboard.tsx';
 import Jobs from './pages/Jobs.tsx';
 import Pipeline from './pages/Pipeline.tsx';
 import Contacts from './pages/Contacts.tsx';
 import ProfilePage from './pages/Profile.tsx';
 import Documents from './pages/Documents.tsx';
+import Answers from './pages/Answers.tsx';
 import Inbox from './pages/Inbox.tsx';
 
 const NAV = [
+  { to: '/start', label: 'Start here', icon: '◎', hint: 'The guided path, step by step' },
   { to: '/dashboard', label: 'Dashboard', icon: '◱', hint: 'Metrics and what is due' },
   { to: '/jobs', label: 'Jobs', icon: '⌕', hint: 'Import, search, rank, generate' },
   { to: '/pipeline', label: 'Pipeline', icon: '▤', hint: 'Kanban and list' },
   { to: '/contacts', label: 'Network', icon: '⚇', hint: 'People and follow-ups' },
   { to: '/profile', label: 'Master CV', icon: '✎', hint: 'Bilingual source of truth' },
   { to: '/documents', label: 'Documents', icon: '❐', hint: 'CV, letters, outreach, prep' },
+  { to: '/answers', label: 'Answer bank', icon: '✍', hint: 'Reusable application-form answers' },
   { to: '/inbox', label: 'Inbox sync', icon: '✉', hint: 'Recruiter email scanning' },
 ];
 
 const TITLES: Record<string, { title: string; sub: string }> = {
+  '/start': { title: 'Start here', sub: 'Every step, in order, with nothing left to guess' },
+  '/answers': { title: 'Answer bank', sub: 'The questions every application form asks — write each one once' },
   '/dashboard': { title: 'Dashboard', sub: 'Where the funnel stands and what is due next' },
   '/jobs': { title: 'Jobs', sub: 'Import from LinkedIn or a public board, search, rank, generate' },
   '/pipeline': { title: 'Pipeline', sub: 'Saved → Tailored → Applied → Interviewing → Offer' },
@@ -130,13 +136,15 @@ export default function App() {
 
         <main key={pathname} className="animate-rise px-6 py-6 md:px-8">
           <Routes>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/" element={<Navigate to="/start" replace />} />
+            <Route path="/start" element={<Start store={store} reload={reload} />} />
             <Route path="/dashboard" element={<Dashboard store={store} />} />
             <Route path="/jobs" element={<Jobs store={store} reload={reload} />} />
             <Route path="/pipeline" element={<Pipeline store={store} reload={reload} />} />
             <Route path="/contacts" element={<Contacts store={store} reload={reload} />} />
             <Route path="/profile" element={<ProfilePage store={store} reload={reload} />} />
             <Route path="/documents" element={<Documents store={store} reload={reload} />} />
+            <Route path="/answers" element={<Answers store={store} reload={reload} />} />
             <Route path="/inbox" element={<Inbox store={store} reload={reload} />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

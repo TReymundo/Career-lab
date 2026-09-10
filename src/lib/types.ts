@@ -65,11 +65,26 @@ export interface AppEvent {
   id: number; application_id: number; on_date: string; kind: string; note: string;
 }
 
-export type DocKind = 'cv' | 'cover' | 'outreach' | 'prep' | 'plan';
+export type DocKind = 'cv' | 'cover' | 'outreach' | 'prep' | 'plan' | 'debrief';
 
 export interface Doc {
   id: number; application_id: number | null; kind: DocKind;
   title: string; body: string; created_at: string;
+}
+
+export interface Answer {
+  id: number; slug: string; question: string; body: string; body_es: string;
+  word_limit: number; company: string; track: string; times_used: number; updated_at: string;
+}
+
+export interface ParsedEntry {
+  kind: 'work' | 'education' | 'extra';
+  org: string; title: string; start_date: string; end_date: string; bullets: string[];
+}
+
+export interface ParsedCV {
+  name: string; email: string; phone: string; linkedin: string; summary: string;
+  skills: string; languages: string; entries: ParsedEntry[]; unmatched: string[];
 }
 
 export interface Store {
@@ -80,6 +95,8 @@ export interface Store {
   event: AppEvent[];
   document: Doc[];
   saved_search: SavedSearch[];
+  answer: Answer[];
+  setting: Record<string, string>;
 }
 
 export const parseBullets = (raw: string): Bullet[] => {

@@ -139,3 +139,24 @@ const STATUS_MIGRATION: Record<string, string> = {
 for (const [from, to] of Object.entries(STATUS_MIGRATION)) {
   db.prepare('UPDATE application SET status = ? WHERE status = ?').run(to, from);
 }
+
+/** --- Answer bank and wizard state (v3) --- */
+db.exec(`
+CREATE TABLE IF NOT EXISTS answer (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  slug TEXT NOT NULL DEFAULT '',            -- which standard question this answers
+  question TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL DEFAULT '',
+  body_es TEXT NOT NULL DEFAULT '',
+  word_limit INTEGER NOT NULL DEFAULT 0,
+  company TEXT NOT NULL DEFAULT '',         -- blank = the reusable master answer
+  track TEXT NOT NULL DEFAULT '',
+  times_used INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS setting (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL DEFAULT ''
+);
+`);

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Job, Store } from './types.ts';
+import type { Job, ParsedCV, Store } from './types.ts';
 
 const json = async (res: Response) => {
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
@@ -41,6 +41,30 @@ export const api = {
   emailStatus: () => fetch('/api/email/status').then(json) as Promise<{ configured: boolean; user: string; host: string }>,
   emailScan: (days: number) => post('/api/email/scan', { days }) as Promise<{ proposals: EmailProposal[] }>,
   emailApply: (proposals: EmailProposal[]) => post('/api/email/apply', { proposals }),
+
+  setSetting: (key: string, value: string) =>
+    fetch(`/api/setting/${key}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value }) }).then(json),
+
+  parseCV: (payload: { text?: string; base64?: string; filename?: string }) =>
+    post('/api/cv/parse', payload) as Promise<{ parsed: ParsedCV; chars: number }>,
+  applyCV: (parsed: ParsedCV, replaceExisting: boolean) =>
+    post('/api/cv/apply', { parsed, replaceExisting }) as Promise<{ experiences: number }>,
+
+  /** Streams the generated file straight to the browser's downloads. */
+  exportFile: async (payload: { markdown: string; format: 'pdf' | 'docx'; kind: string; company?: string; lang: string; name: string }) => {
+    const res = await fetch('/api/export', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const blob = await res.blob();
+    const name = res.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1] ?? `document.${payload.format}`;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    return name;
+  },
 };
 
 export interface EmailProposal {

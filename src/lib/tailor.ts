@@ -272,3 +272,43 @@ export function interviewPrep(app: Application, experience: Experience[], lang: 
     list(c.logisticsItems),
   ].join('\n');
 }
+
+const DEBRIEF = {
+  en: {
+    title: 'Interview debrief',
+    intro: 'Fill this in within an hour, while you still remember the wording. This is what makes round three better than round one.',
+    sections: [
+      ['Who was in the room', '- Name, role, how technical they were.'],
+      ['Questions I was asked \u2014 verbatim where you can', '- '],
+      ['Where I hesitated or answered badly', '- '],
+      ['What I said I would send or follow up on', '- '],
+      ['What they told me about the team, the desk or the process', '- '],
+      ['My read on it, and what I do differently next time', '- '],
+    ],
+  },
+  es: {
+    title: 'Debrief de entrevista',
+    intro: 'Completalo dentro de la hora, mientras te acord\u00e1s de las palabras exactas. Esto es lo que hace que la tercera ronda salga mejor que la primera.',
+    sections: [
+      ['Qui\u00e9n estaba en la sala', '- Nombre, rol, qu\u00e9 tan t\u00e9cnico fue.'],
+      ['Preguntas que me hicieron \u2014 textuales si pod\u00e9s', '- '],
+      ['D\u00f3nde dud\u00e9 o respond\u00ed mal', '- '],
+      ['Qu\u00e9 dije que iba a mandar o seguir', '- '],
+      ['Qu\u00e9 me contaron del equipo, la mesa o el proceso', '- '],
+      ['Mi lectura, y qu\u00e9 hago distinto la pr\u00f3xima', '- '],
+    ],
+  },
+} as const;
+
+/** A template you fill in, not a document that writes itself \u2014 only you were in the room. */
+export function interviewDebrief(app: Application, lang: Lang): string {
+  const c = DEBRIEF[lang];
+  return [
+    `# ${c.title} \u2014 ${app.company}`,
+    `*${app.role} \u00b7 ${new Date().toLocaleDateString(lang === 'es' ? 'es-AR' : 'en-GB')}*`,
+    '',
+    c.intro,
+    '',
+    ...c.sections.flatMap(([heading, body]) => [`## ${heading}`, '', body, '']),
+  ].join('\n');
+}
