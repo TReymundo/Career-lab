@@ -24,14 +24,16 @@ type T = (en: string, es: string) => string;
 const NAV = [
   { to: '/start', icon: '◎', label: (t: T) => t('Start here', 'Empezá acá'), sub: (t: T) => t('You and your CV', 'Vos y tu CV'),
     unlock: () => true, opens: (t: T) => '' },
+  { to: '/jobs', icon: '⌕', label: (t: T) => t('Jobs', 'Avisos'), sub: (t: T) => t('Find and import openings', 'Encontrar e importar avisos'),
+    unlock: (s: Store) => s.experience.some((e) => parseBullets(e.bullets).length > 0),
+    opens: (t: T) => t('Opens once your CV has one line in it', 'Se abre cuando tu CV tiene una línea') },
+  { to: '/dashboard', icon: '◱', label: (t: T) => t('Write CVs', 'Escribir CVs'), sub: (t: T) => t('Turn saved jobs into CVs', 'Convertir avisos en CVs'),
+    unlock: (s: Store) => s.experience.some((e) => parseBullets(e.bullets).length > 0),
+    opens: (t: T) => t('Opens once your CV has one line in it', 'Se abre cuando tu CV tiene una línea') },
   { to: '/profile', icon: '✎', label: (t: T) => t('My CV', 'Mi CV'), sub: (t: T) => t('Everything about you', 'Todo sobre vos'),
     unlock: (s: Store) => s.experience.length > 0,
     opens: (t: T) => t('Opens once you add anything to your CV', 'Se abre cuando agregás algo a tu CV') },
-  { to: '/jobs', icon: '⌕', label: (t: T) => t('Jobs', 'Avisos'), sub: (t: T) => t('Import, search, rank', 'Importar, buscar, ordenar'),
-    unlock: (s: Store) => s.experience.some((e) => parseBullets(e.bullets).length > 0),
-    opens: (t: T) => t('Opens once your CV has one line in it', 'Se abre cuando tu CV tiene una línea') },
   { to: '/documents', icon: '❐', label: (t: T) => t('Documents', 'Documentos'), sub: (t: T) => t('CV, letters, prep', 'CV, cartas, preparación'),
-    // Finishing the CV files it here, so this has to be reachable the moment that happens.
     unlock: (s: Store) => s.application.length > 0 || s.document.length > 0,
     opens: (t: T) => t('Opens once you create your CV', 'Se abre cuando creás tu CV') },
   { to: '/pipeline', icon: '▤', label: (t: T) => t('Pipeline', 'Tablero'), sub: (t: T) => t('Track applications', 'Seguí tus postulaciones'),
@@ -43,9 +45,6 @@ const NAV = [
   { to: '/contacts', icon: '⚇', label: (t: T) => t('Network', 'Contactos'), sub: (t: T) => t('People to follow up', 'Gente a la que seguir'),
     unlock: (s: Store) => s.application.length > 0,
     opens: (t: T) => t('Opens once you pick a job to apply to', 'Se abre cuando elegís un aviso') },
-  { to: '/dashboard', icon: '◱', label: (t: T) => t('Dashboard', 'Panel'), sub: (t: T) => t('Metrics', 'Métricas'),
-    unlock: (s: Store) => s.application.length > 0 || s.document.length > 0,
-    opens: (t: T) => t('Opens once you adapt a CV to a job', 'Se abre cuando adaptás un CV a un aviso') },
   { to: '/inbox', icon: '✉', label: (t: T) => t('Inbox sync', 'Correo'), sub: (t: T) => t('Recruiter email', 'Mails de reclutadores'),
     unlock: (s: Store) => s.application.some((a) => a.status === 'applied'),
     opens: (t: T) => t('Opens once you have applied to something', 'Se abre cuando te postulaste a algo') },
@@ -59,7 +58,7 @@ const TITLES: Record<string, (t: T) => { title: string; sub: string }> = {
   '/pipeline': (t) => ({ title: t('Pipeline', 'Tablero'), sub: t('Saved → Tailored → Applied → Interviewing → Offer', 'Guardado → Adaptado → Postulado → Entrevistas → Oferta') }),
   '/answers': (t) => ({ title: t('Answer bank', 'Respuestas'), sub: t('The questions every form asks — write each once', 'Las preguntas que hace todo formulario — escribí cada una una vez') }),
   '/contacts': (t) => ({ title: t('Network', 'Contactos'), sub: t('People, and when to come back to them', 'Gente, y cuándo volver a escribirles') }),
-  '/dashboard': (t) => ({ title: t('Dashboard', 'Panel'), sub: t('Where the funnel stands and what is due', 'Cómo va el embudo y qué vence') }),
+  '/dashboard': (t) => ({ title: t('Write CVs', 'Escribir CVs'), sub: t('Your saved jobs, turned into CVs written for each one', 'Tus avisos guardados, convertidos en CVs escritos para cada uno') }),
   '/inbox': (t) => ({ title: t('Inbox sync', 'Correo'), sub: t('Recruiter emails in English and Spanish, proposed not applied', 'Mails de reclutadores en inglés y español, propuestos no aplicados') }),
 };
 
@@ -193,7 +192,7 @@ export default function App() {
             <Route path="/" element={<Navigate to="/start" replace />} />
             <Route path="/home" element={<Navigate to="/" replace />} />
             <Route path="/start" element={<Start store={store} reload={reload} />} />
-            <Route path="/dashboard" element={<Dashboard store={store} />} />
+            <Route path="/dashboard" element={<Dashboard store={store} reload={reload} />} />
             <Route path="/jobs" element={<Jobs store={store} reload={reload} />} />
             <Route path="/pipeline" element={<Pipeline store={store} reload={reload} />} />
             <Route path="/contacts" element={<Contacts store={store} reload={reload} />} />

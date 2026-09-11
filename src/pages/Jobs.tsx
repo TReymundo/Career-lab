@@ -8,6 +8,7 @@ import Guide from '../components/Guide.tsx';
 import JobGrid from '../components/JobGrid.tsx';
 import { toast } from '../components/Toast.tsx';
 import { buildCV, matchScore } from '../lib/templates.ts';
+import { adaptJob } from '../lib/adapt.ts';
 import { TRACKS, type Job, type Lang, type SavedSearch, type Store, type Track } from '../lib/types.ts';
 
 const SOURCE_TONE: Record<string, string> = {
@@ -77,38 +78,14 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
     if (ids.length) navigate(`/documents?apps=${ids.join(',')}&lang=${lang}&track=${track}`);
   };
 
-  /**
-    * One job in, a CV written for it out. The posting becomes an application, the AI rewrites
-    * the profile paragraph around this employer using only what the CV already claims, and the
-    * result is filed under Documents.
-    */
+  /** Same call the dashboard uses, so one job and fifty behave identically. */
   const adapt = async (job: Job) => {
     setAdapting(job.id);
     setNote('');
     try {
-      const { application_id } = await api.promote(job.id, track);
-      const base = buildCV(store.profile, store.experience, { track, lang, template: 'ats' });
-      const { adaptation } = await api.aiAdapt({
-        cv: base, company: job.company, role: job.title, jd: job.description, lang,
-      });
-
-      const heading = lang === 'es' ? 'Perfil' : 'Profile';
-      const hasProfile = new RegExp(`## ${heading}`).test(base);
-      const tailored = hasProfile
-        ? base.replace(new RegExp(`(## ${heading}\\n\\n)([^\\n]*)`), `$1${adaptation.summary}`)
-        : base.replace(/\n\n/, `\n\n## ${heading}\n\n${adaptation.summary}\n\n`);
-
-      await api.create('document', {
-        application_id,
-        kind: 'cv',
-        title: `CV — ${job.company} — ${job.title}`.slice(0, 120),
-        body: tailored,
-      });
-      await api.update('application', application_id, { status: 'tailored', jd: job.description });
-      await api.update('job', job.id, { tailored_at: today() });
-
+      const r = await adaptJob({ job, store, track, lang });
       await Promise.all([load(), reload()]);
-      setNote(adaptation.why);
+      setNote(r.why);
       toast(
         t(`CV adapted for ${job.company}`, `CV adaptado para ${job.company}`),
         t('It is filed under Documents, and the job moved onto your board as Tailored.',
@@ -146,6 +123,23 @@ export default function Jobs({ store, reload }: { store: Store; reload: () => Pr
             'Después marcá los buenos y apretá Generar CV — esa es la pantalla siguiente.'),
         ]}
       />
+
+      {total > 0 && (
+        <Card className="animate-rise flex flex-wrap items-center gap-4 border-brand-200 bg-brand-50 px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-ink-900">
+              {t(`${total} jobs saved`, `${total} avisos guardados`)}
+            </p>
+            <p className="text-xs text-ink-700">
+              {t('Done importing? The next screen turns them into CVs — all at once, or one at a time.',
+                 '¿Terminaste de importar? La pantalla siguiente los convierte en CVs — todos juntos, o de a uno.')}
+            </p>
+          </div>
+          <Button variant="primary" className="px-5 py-2.5" onClick={() => navigate('/dashboard')}>
+            {t('Ready → write CVs', 'Listo → escribir CVs')}
+          </Button>
+        </Card>
+      )}
 
       <div className="flex flex-wrap items-end gap-3">
         <Field

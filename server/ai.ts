@@ -75,11 +75,13 @@ async function callGemini(prompt: string, opts: CallOptions, attempt = 0): Promi
     if (res.status === 400 && /API key not valid/i.test(body)) throw new Error('That API key was rejected by Google. Check it and try again.');
 
     if ((res.status === 503 || res.status === 429) && attempt < 2) {
-      await sleep(1500 * (attempt + 1));
+      // 429 is a per-minute quota on the free tier, so it needs a real wait; 503 is a spike
+      // that usually clears in seconds.
+      await sleep(res.status === 429 ? 8000 * (attempt + 1) : 1500 * (attempt + 1));
       return callGemini(prompt, opts, attempt + 1);
     }
     if (res.status === 503) throw new Error('Google’s model is busy right now — that is on their side, not yours. Give it a minute and press the button again.');
-    if (res.status === 429) throw new Error('Google is rate-limiting your key. Wait a minute and try again.');
+    if (res.status === 429) throw new Error('Google’s free tier limits how many requests a minute your key may make, and this one went over even after waiting. Leave it a minute, then carry on — anything already written is saved.');
     if (res.status === 403) throw new Error('Google refused the key. Check that the Generative Language API is enabled for it.');
     throw new Error(`Google returned ${res.status}. ${body.replace(/\s+/g, ' ').slice(0, 200)}`);
   }
