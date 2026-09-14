@@ -20,6 +20,18 @@ npm install
 npm run dev
 ```
 
+### On a new machine (after cloning from GitHub)
+
+The repository holds the code only. Two things live outside it on purpose and need setting
+up once per machine:
+
+- **Your data** — `data/career-lab.db` is not committed. A fresh clone starts empty; restore a
+  backup from **Pipeline → Download a backup** on the old machine if you want to carry it over.
+- **Your Google API key** — paste it again in the AI step, or put `GOOGLE_API_KEY=…` in a `.env`
+  file next to `package.json`. Neither is ever committed.
+
+Then `npm install`, `npm run dev`, and open http://localhost:5273.
+
 Either way, open http://localhost:5273 and follow **Start here**. That is the whole instruction.
 
 `npm run reset` empties everything if you want to begin again from scratch.
