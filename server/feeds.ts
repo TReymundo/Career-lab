@@ -143,6 +143,9 @@ async function himalayas(query: string): Promise<Fetched[]> {
 
 const IMPLS: Record<FeedId, (q: string) => Promise<Fetched[]>> = { remotive, arbeitnow, jobicy, himalayas };
 
+/** Arbeitnow is a German board — mostly on-site roles in Germany — so it is opt-in, not default. */
+export const DEFAULT_FEEDS: FeedId[] = ['remotive', 'jobicy', 'himalayas'];
+
 export interface PullReport {
   inserted: number;
   skipped: number;
@@ -155,7 +158,7 @@ export interface PullReport {
  * back. Feeds are queried in parallel but queries run in sequence, so a long list of searches
  * does not open forty sockets at once.
  */
-export async function pullJobs(queries: string[], feeds: FeedId[] = FEEDS.map((f) => f.id)): Promise<PullReport> {
+export async function pullJobs(queries: string[], feeds: FeedId[] = DEFAULT_FEEDS): Promise<PullReport> {
   const terms = queries.map((q) => q.trim()).filter(Boolean);
   const searches = terms.length ? terms : [''];
   const perFeed = new Map<string, { fetched: number; error?: string }>();
@@ -176,7 +179,9 @@ export async function pullJobs(queries: string[], feeds: FeedId[] = FEEDS.map((f
     }
   }
 
-  const usable = all.filter((j) => j.company && j.title);
+  // Remotive, Jobicy and Himalayas list nothing but remote roles; Arbeitnow says per posting.
+  const usable = all.filter((j) => j.company && j.title)
+    .map((j) => (j.source === 'arbeitnow' ? { ...j, remote: /^Remote/.test(j.location ?? '') ? 1 : 0 } : { ...j, remote: 1 }));
   const { inserted, skipped } = insertJobs(usable);
 
   // Categories arrive with the posting; storing them is what makes the grid groupable.

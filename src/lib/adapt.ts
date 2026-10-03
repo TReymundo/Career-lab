@@ -17,21 +17,18 @@ export interface AdaptResult {
   title: string;
 }
 
-/** Swaps in the tailored profile paragraph, adding the section if the CV has none. */
-function withSummary(base: string, summary: string, lang: Lang): string {
+/**
+ * Swaps in the tailored profile paragraph. It lives in the header block as an italic `> `
+ * line (see buildCV); if the CV has none yet, it goes at the end of that block.
+ */
+function withSummary(base: string, summary: string): string {
   if (!summary) return base;
-  const marker = `## ${lang === 'es' ? 'Perfil' : 'Profile'}`;
-  const at = base.indexOf(marker);
-
-  if (at < 0) {
-    // Insert straight after the contact block, which is the first blank-line-separated chunk.
-    const parts = base.split('\n\n');
-    return [parts[0], `${marker}\n\n${summary}`, ...parts.slice(1)].join('\n\n');
-  }
-
-  const nextHeading = base.indexOf('\n## ', at + marker.length);
-  const tail = nextHeading < 0 ? '' : base.slice(nextHeading);
-  return `${base.slice(0, at)}${marker}\n\n${summary}\n${tail}`;
+  const line = `> ${summary.replace(/\s+/g, ' ').trim()}`;
+  const [head, ...rest] = base.split('\n\n');
+  const lines = head.split('\n');
+  const at = lines.findIndex((l) => l.startsWith('> '));
+  if (at >= 0) lines[at] = line; else lines.push(line);
+  return [lines.join('\n'), ...rest].join('\n\n');
 }
 
 export async function adaptJob({ job, store, track, lang }: {
@@ -45,7 +42,7 @@ export async function adaptJob({ job, store, track, lang }: {
     cv: base, company: job.company, role: job.title, jd: job.description, lang,
   });
 
-  const markdown = withSummary(base, adaptation.summary?.trim() ?? '', lang);
+  const markdown = withSummary(base, adaptation.summary?.trim() ?? '');
 
   const { application_id } = await api.promote(job.id, track);
   const doc = await api.create<Doc>('document', {

@@ -1,4 +1,5 @@
 import { db } from './db.ts';
+import { generate, providers, type CallOptions } from './llm.ts';
 
 /**
  * Optional AI assistance through Google's Gemini API, using a key you supply.
@@ -12,8 +13,6 @@ import { db } from './db.ts';
  */
 
 const MODEL = process.env.GOOGLE_MODEL ?? 'gemini-2.5-flash';
-const ENDPOINT = (model: string) =>
-  `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
 export function getKey(): string {
   if (process.env.GOOGLE_API_KEY) return process.env.GOOGLE_API_KEY;
@@ -24,7 +23,9 @@ export function getKey(): string {
 export function keyStatus() {
   const key = getKey();
   return {
-    configured: Boolean(key),
+    // Any connected AI counts; reading PDFs additionally needs Google (see `google`).
+    configured: providers().length > 0,
+    google: providers().some((p) => p.kind === 'google'),
     source: process.env.GOOGLE_API_KEY ? 'env' : key ? 'app' : 'none',
     model: MODEL,
     // Never return the key itself — only enough to recognise which one is in use.
@@ -34,72 +35,17 @@ export function keyStatus() {
 
 type Schema = Record<string, unknown>;
 
-interface CallOptions {
-  system: string;
-  /** When given, the model is constrained to emit JSON matching this shape. */
-  schema?: Schema;
-  maxTokens?: number;
-}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * Google returns 503 when the model is busy and 429 when you are going too fast. Both are
- * temporary and both used to surface as a wall of raw JSON, so they are retried here with a
- * short backoff before anyone is told anything went wrong.
+ * Every text request goes through the router in llm.ts: all connected providers and models,
+ * rotated on limits, cached. The name is kept because the whole file calls it.
  */
-async function callGemini(prompt: string, opts: CallOptions, attempt = 0): Promise<string> {
-  const { system, schema, maxTokens = 8192 } = opts;
-  const key = getKey();
-  if (!key) throw new Error('No Google API key set. Add one in the AI step, or put GOOGLE_API_KEY in your .env file.');
+const callGemini = (prompt: string, opts: CallOptions) => generate(prompt, opts);
 
-  const res = await fetch(`${ENDPOINT(MODEL)}?key=${encodeURIComponent(key)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.4,
-        maxOutputTokens: maxTokens,
-        // 2.5 models think before answering, and that thinking is billed against the same
-        // output budget. Left on, a long review silently truncates and comes back unparseable.
-        thinkingConfig: { thinkingBudget: 0 },
-        ...(schema ? { responseMimeType: 'application/json', responseSchema: schema } : {}),
-      },
-    }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text();
-    if (res.status === 400 && /API key not valid/i.test(body)) throw new Error('That API key was rejected by Google. Check it and try again.');
-
-    if ((res.status === 503 || res.status === 429) && attempt < 2) {
-      // 429 is a per-minute quota on the free tier, so it needs a real wait; 503 is a spike
-      // that usually clears in seconds.
-      await sleep(res.status === 429 ? 8000 * (attempt + 1) : 1500 * (attempt + 1));
-      return callGemini(prompt, opts, attempt + 1);
-    }
-    if (res.status === 503) throw new Error('Google’s model is busy right now — that is on their side, not yours. Give it a minute and press the button again.');
-    if (res.status === 429) throw new Error('Google’s free tier limits how many requests a minute your key may make, and this one went over even after waiting. Leave it a minute, then carry on — anything already written is saved.');
-    if (res.status === 403) throw new Error('Google refused the key. Check that the Generative Language API is enabled for it.');
-    throw new Error(`Google returned ${res.status}. ${body.replace(/\s+/g, ' ').slice(0, 200)}`);
-  }
-
-  const data = await res.json() as {
-    candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
-    promptFeedback?: { blockReason?: string };
-  };
-  if (data.promptFeedback?.blockReason) throw new Error(`Google blocked the request: ${data.promptFeedback.blockReason}`);
-
-  const candidate = data.candidates?.[0];
-  const text = candidate?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
-  if (!text.trim()) {
-    if (candidate?.finishReason === 'MAX_TOKENS') throw new Error('The response was cut short. Try again with fewer bullets selected.');
-    throw new Error('Google returned an empty response. Try again.');
-  }
-  return text.trim();
-}
+/** True when any non-Google backup is connected (the jobs screen uses it to offer AI features). */
+export const groqConfigured = () => providers().some((p) => p.kind !== 'google');
 
 /** Even with a schema, take a belt-and-braces pass at anything wrapped in prose or fences. */
 function parseJson<T>(text: string): T {
@@ -121,19 +67,14 @@ function parseJson<T>(text: string): T {
   }
 }
 
-/** One retry with a blunter instruction, because a single bad roll should not surface as an error. */
+/**
+ * JSON answers are checked by the router itself: an answer that does not parse counts as that
+ * route failing, so the next model is asked — and the broken answer is never cached.
+ */
+const parses = (text: string) => { try { parseJson(text); return true; } catch { return false; } };
+
 async function json<T>(prompt: string, opts: CallOptions): Promise<T> {
-  try {
-    return parseJson<T>(await callGemini(prompt, opts));
-  } catch (e) {
-    if (e instanceof Error && e.message !== 'did-not-return-json') throw e;
-    const retry = await callGemini(`${prompt}\n\nReturn ONLY the JSON. No explanation, no code fence, nothing before or after it.`, opts);
-    try {
-      return parseJson<T>(retry);
-    } catch {
-      throw new Error('The model would not return usable JSON, twice. Try again, or with fewer items selected.');
-    }
-  }
+  return parseJson<T>(await callGemini(`${prompt}\n\nReturn ONLY the JSON.`, { ...opts, validate: parses }));
 }
 
 const LANG_NAME = { en: 'English', es: 'Latin American Spanish (voseo, as used in Argentina and Uruguay)' } as const;
@@ -267,6 +208,70 @@ ${fields.map((f) => `[${f.target}] ${f.label}: ${f.value}`).join('\n')}`;
   return json<FieldEdit[]>(prompt, { system: houseRules(ctx.lang), schema: EDIT_SCHEMA });
 }
 
+/**
+ * Reads an existing CV into the same shape the rule-based importer produces, but far more
+ * reliably, and it can read a PDF directly. Extraction only: it copies, it never improves —
+ * improving is a separate, visible step the user chooses later.
+ */
+export interface ReadCV {
+  name: string; headline: string; email: string; phone: string; location: string; linkedin: string;
+  summary: string; skills: string; languages: string;
+  entries: { kind: 'work' | 'education' | 'extra'; org: string; title: string; location: string; start_date: string; end_date: string; bullets: string[] }[];
+}
+
+const S = { type: 'string' };
+const READ_SCHEMA: Schema = {
+  type: 'object',
+  properties: {
+    name: S, headline: S, email: S, phone: S, location: S, linkedin: S, summary: S, skills: S, languages: S,
+    entries: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          kind: { type: 'string', enum: ['work', 'education', 'extra'] },
+          org: S, title: S, location: S, start_date: S, end_date: S,
+          bullets: { type: 'array', items: S },
+        },
+        required: ['kind', 'org', 'title', 'location', 'start_date', 'end_date', 'bullets'],
+      },
+    },
+  },
+  required: ['name', 'headline', 'email', 'phone', 'location', 'linkedin', 'summary', 'skills', 'languages', 'entries'],
+};
+
+export async function readCV(input: { text?: string; file?: { mimeType: string; data: string } }) {
+  const prompt = `Extract everything in this CV into the fields of the schema.
+
+Rules:
+- Copy what is written. Never invent, improve, translate or summarise. Keep the original language.
+- A field the CV does not contain is an empty string.
+- "headline": ONLY a short job title the person gives themselves right under their name, at most ten words (e.g. "Data Analyst"). A sentence or paragraph about the person is never the headline — it is the "summary". If there is no short title, leave "headline" empty.
+- "summary": the profile / about-me paragraph, if any, copied in full.
+- "location": the person's own city and country as written.
+- "skills": if the CV groups skills under categories, one category per line as "Category - item, item" (keep each category's name). Otherwise comma-separated.
+- "languages": comma-separated, keeping any level given, e.g. "English (C1)".
+- "entries": one per job, degree, course, project, club, volunteering role, etc.
+  kind "work" = paid jobs and internships, and work-like roles listed under experience; "education" = schools, degrees, courses, certificates; "extra" = projects, activities and everything else.
+  "org" is the employer or institution (empty if none is named), "title" the role, qualification or project name, "location" the city of that entry if given.
+  Dates as written (e.g. "2022 - 2026 (Previsto)"); "end_date" is empty if it is ongoing.
+  "bullets" are the lines describing that entry, copied word for word without the bullet symbol.
+${input.text ? `\nCV text:\n${input.text.slice(0, 20000)}` : ''}`;
+
+  const read = await json<ReadCV>(prompt, {
+    system: 'You extract data from CVs exactly as written. You never invent, embellish or correct anything.',
+    schema: READ_SCHEMA,
+    files: input.file ? [input.file] : [],
+  });
+
+  // Belt and braces: a paragraph that slipped into the headline belongs in the profile.
+  if (read.headline.length > 90) {
+    if (!read.summary.trim()) read.summary = read.headline;
+    read.headline = '';
+  }
+  return read;
+}
+
 export async function translate(text: string, to: Lang) {
   const prompt = `Translate the following CV text into ${LANG_NAME[to]}.
 
@@ -378,7 +383,304 @@ Rules:
 Text:
 ${text.slice(0, 12000)}`;
 
-  return json<ExtractedJob[]>(prompt, { system: houseRules(lang), schema: EXTRACT_SCHEMA });
+  // Copying, not writing: the house rules would translate titles into the UI language.
+  void lang;
+  return json<ExtractedJob[]>(prompt, {
+    system: 'You extract job postings exactly as written. Never translate, invent, embellish or merge postings. Keep each link exactly as it appears in [brackets] next to the job.',
+    schema: EXTRACT_SCHEMA,
+  });
+}
+
+/** Job titles this person could apply for today — short, in both languages, for the setup chips. */
+export async function suggestTitles(cv: string, lang: Lang, aim: { fields?: string[]; experience?: string } = {}) {
+  const level = aim.experience === 'none'
+    ? 'They have NO work experience: only internships ("pasantía"), trainee and graduate/young-professional programmes ("jóvenes profesionales"), and entry-level assistant or junior roles.'
+    : aim.experience === 'experienced'
+      ? 'They have a few years of experience: junior and semi-senior roles.'
+      : 'They have a little experience: internships, trainee and junior roles.';
+  const prompt = `List 12 short job titles this person should search for, as they appear in real job postings in Latin America. Mix Spanish and English (e.g. "Analista financiero Jr", "Data Analyst Jr", "Pasante de finanzas").
+${aim.fields?.length ? `They WANT to work in: ${aim.fields.join(', ')}. Every title must be in these fields — even if the CV points somewhere else. Use the CV only to judge level and transferable skills.` : 'Use the CV to decide the field.'}
+${level}
+Titles only — no company names.
+
+CV:
+${cv.slice(0, 4000)}`;
+  return json<string[]>(prompt, { system: houseRules(lang), schema: { type: 'array', items: S }, maxTokens: 600 });
+}
+
+/**
+ * Real tailoring: what this job asks for, what in the CV (and the story bank) proves it, and
+ * the concrete edits that make the CV read as written for it. Every edit is a suggestion the
+ * person accepts or rejects, addressed by id so it applies exactly.
+ */
+export interface Tailoring {
+  requirements: { text: string; covered: 'yes' | 'partly' | 'no'; evidence: string }[];
+  headline: string;
+  summary: string;
+  edits: { target: string; to: string; why: string }[];
+  order: number[];
+  drop: number[];
+  skills: string;
+  gaps: { requirement: string; question: string }[];
+  why: string;
+}
+
+const TAILOR_SCHEMA: Schema = {
+  type: 'object',
+  properties: {
+    requirements: { type: 'array', items: { type: 'object', properties: { text: S, covered: { type: 'string', enum: ['yes', 'partly', 'no'] }, evidence: S }, required: ['text', 'covered', 'evidence'] } },
+    headline: S, summary: S,
+    edits: { type: 'array', items: { type: 'object', properties: { target: S, to: S, why: S }, required: ['target', 'to', 'why'] } },
+    order: { type: 'array', items: { type: 'integer' } },
+    drop: { type: 'array', items: { type: 'integer' } },
+    skills: S,
+    gaps: { type: 'array', items: { type: 'object', properties: { requirement: S, question: S }, required: ['requirement', 'question'] } },
+    why: S,
+  },
+  required: ['requirements', 'headline', 'summary', 'edits', 'order', 'drop', 'skills', 'gaps', 'why'],
+};
+
+export async function tailorCV(input: { cv: string; stories: string; company: string; role: string; jd: string; lang: Lang }) {
+  const prompt = `Tailor this person's CV to ONE job, the way a sharp career coach would — not by adding a sentence about the company, but by making the whole CV read as evidence for this role.
+
+THE JOB: ${input.role} at ${input.company}
+${input.jd ? `POSTING:\n${input.jd.slice(0, 5000)}` : '(The posting text is not available. Infer the usual requirements for this exact title at this kind of company, and keep them generic and realistic.)'}
+
+THE CV (entries and lines have ids):
+${input.cv.slice(0, 7000)}
+
+WHAT THEY TOLD US ABOUT THEMSELVES (true, usable, not yet on the CV):
+${input.stories.slice(0, 4000) || '(nothing yet)'}
+
+Return:
+1. "requirements": the 6–10 things this job really asks for, most important first. "covered": yes / partly / no based on the CV and the stories. "evidence": the line id(s) or story that proves it, or "" — in one short phrase.
+2. "headline": a short headline for the top of the CV, aimed at this role (it may echo the job title only if the person genuinely fits it).
+3. "summary": a 2–3 sentence profile written for this job, built ONLY from facts in the CV and the stories.
+4. "edits": rewrites of existing lines, so their wording matches what this job values. "target" is "line ENTRY.INDEX" exactly as given (e.g. "line 12.0"). Keep every fact and number; you may reorder words, lead with the result, use the posting's vocabulary for things the person actually did, tighten. NEVER add a tool, number, responsibility or result that is not in the CV or the stories. Only lines that genuinely improve — usually 3–8.
+5. "order": entry ids in the order they should appear within their sections (most relevant first).
+6. "drop": ids of activity/project entries that are irrelevant to this job and only take space (never education, never the only work entry). Often empty.
+7. "skills": the skills line rewritten with the ones this job needs first (only skills they have), groups kept.
+8. "gaps": for each requirement marked "no" or "partly" that the person might well have but never mentioned, a short friendly question to ask them (max 3).
+9. "why": one sentence, to the person, on what you emphasised.
+
+Everything you write must be in ${LANG_NAME[input.lang]}.`;
+
+  return json<Tailoring>(prompt, { system: houseRules(input.lang), schema: TAILOR_SCHEMA, maxTokens: 6000 });
+}
+
+/**
+ * The cover letter, written from the person's own stories. Specific beats polished: one real
+ * story that matches what the job needs is worth more than any number of adjectives.
+ */
+export async function writeLetter(input: { cv: string; stories: string; company: string; role: string; jd: string; tailoring: Tailoring; lang: Lang }) {
+  const prompt = `Write a cover letter for ${input.role} at ${input.company}.
+
+What the job needs most (from the analysis): ${input.tailoring.requirements.slice(0, 6).map((r) => r.text).join('; ')}
+${input.jd ? `Posting:\n${input.jd.slice(0, 3000)}\n` : ''}
+The CV:
+${input.cv.slice(0, 5000)}
+
+Their own stories (true; use one or two that best prove what this job needs — retell them concretely, with their details and numbers):
+${input.stories.slice(0, 4000) || '(none yet — rely on the CV)'}
+
+Rules:
+- 220–320 words, 4 short paragraphs, plain text paragraphs separated by blank lines. No header, no address block, no date.
+- The FIRST sentence must not contain "applying", "apply", "writing", "postular", "escribo" or the job title — open with something specific and human (what about this company/role pulls them, or a one-line hook from their story). No clichés ("passionate", "add value", "dynamic environment", "I am confident that", "me apasiona").
+- No brackets and no placeholders of any kind. If a number is not known, write the sentence without it.
+- Never upgrade a fact with adjectives they did not use ("advanced statistics", "expert in", "extensive"): say exactly what they did.
+- The middle is one or two real stories from above or the CV, each tied explicitly to something the job needs.
+- Honest about level: if they are a student or junior, own it as an asset (learning speed, fresh tools), never pretend to seniority.
+- End with a short, confident close and "${input.lang === 'es' ? 'Saludos,' : 'Best regards,'}" followed by their name.
+- Never mention romantic relationships, health, family conflict or anything intimate, even if hinted at — frame resilience through what they DID.
+- Never invent a fact.
+Write it in ${LANG_NAME[input.lang]}.`;
+
+  // Not the house rules: those ask for [bracketed] prompts where numbers are missing, which a letter must never contain.
+  const letter = await callGemini(prompt, {
+    system: `You write cover letters for real people, in ${LANG_NAME[input.lang]}, from facts they gave you. You never invent facts and never leave placeholders.`,
+    maxTokens: 3000,
+  });
+  return letter.replace(/\s*\[[^\]]{2,120}\]\s*/g, ' ').replace(/ {2,}/g, ' ').trim();
+}
+
+/**
+ * One turn of the "get to know you" interview. The interviewer is a friend, not a recruiter:
+ * it reacts to what you said like a person would, keeps what it learned as stories, facts,
+ * values and traits, and asks at most one follow-up — the one that turns an anecdote into a
+ * story with a result.
+ */
+export interface StoryItem { kind: 'story' | 'fact' | 'value' | 'trait'; title: string; body: string; shows: string; private: boolean }
+export interface InterviewTurn { reaction: string; followUp: string; items: StoryItem[] }
+
+const TURN_SCHEMA: Schema = {
+  type: 'object',
+  properties: {
+    reaction: S,
+    followUp: S,
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          kind: { type: 'string', enum: ['story', 'fact', 'value', 'trait'] },
+          title: S, body: S, shows: S, private: { type: 'boolean' },
+        },
+        required: ['kind', 'title', 'body', 'shows', 'private'],
+      },
+    },
+  },
+  required: ['reaction', 'followUp', 'items'],
+};
+
+export async function interviewTurn(input: { question: string; answer: string; isFollowUp: boolean; known: string; lang: Lang }) {
+  const prompt = `You are a warm, curious friend getting to know someone — they are a student or young professional looking for work. You are NOT a recruiter. Talk like a friend from Buenos Aires would${input.lang === 'es' ? ' (voseo, casual Spanish)' : ' (casual English)'}.
+
+You asked: "${input.question}"
+They answered: "${input.answer}"
+
+What you already know about them (do not ask again):
+${input.known || '(nothing yet)'}
+
+Return:
+- "reaction": 1–2 short, genuine sentences reacting to what they said, like a friend would (empathy if it was hard, enthusiasm if it is cool, a light joke if it fits). No therapy-speak, no "great answer".
+- "followUp": ${input.isFollowUp ? 'an empty string — move on.' : 'ONE short follow-up question that digs for a concrete story — what happened, what THEY did, what came of it (with a number if possible) — or the feeling/lesson behind it. Empty string if the answer was already complete or they clearly did not want to talk about it.'}
+- "items": everything worth remembering from this answer, each as:
+  - kind "story": something that happened, with situation → what they did → result. title = 4–8 words. body = 2–4 sentences in third person, keeping every concrete detail and number they gave. Never invent details.
+  - kind "fact": a concrete fact (age, languages, instruments, sport, where they live, studies, tools they use…). body = one short sentence.
+  - kind "value": something they care about. kind "trait": how they are (as shown by what they said, not flattery).
+  - "shows": comma-separated qualities an employer would read into it (e.g. "resilience, discipline, analysis") — empty for facts.
+  - "private": true for relationships, romance, family conflict, health, or anything intimate — those help understand the person but must never appear in a document. false otherwise.
+  Return an empty list if there is nothing worth keeping.`;
+
+  return json<InterviewTurn>(prompt, {
+    system: `You write ALL output in ${LANG_NAME[input.lang]}. You never invent facts about the person.`,
+    schema: TURN_SCHEMA,
+    maxTokens: 2048,
+  });
+}
+
+/**
+ * Turns interview answers into the story bank — several answers per call, so ten long answers
+ * cost three or four requests instead of thirty. Extraction only: nothing invented.
+ */
+const EXTRACT_STORIES_SCHEMA: Schema = {
+  type: 'array',
+  items: {
+    type: 'object',
+    properties: {
+      answer: { type: 'integer' },
+      kind: { type: 'string', enum: ['story', 'fact', 'value', 'trait'] },
+      title: S, body: S, shows: S, private: { type: 'boolean' },
+    },
+    required: ['answer', 'kind', 'title', 'body', 'shows', 'private'],
+  },
+};
+
+export async function extractStories(answers: { n: number; question: string; answer: string }[], known: string, lang: Lang) {
+  const prompt = `These are answers someone gave in a relaxed "get to know you" chat. Pull out everything worth remembering, so it can later be used to write their CV and cover letters.
+
+Already known (do not repeat):
+${known || '(nothing yet)'}
+
+${answers.map((a) => `ANSWER ${a.n}\nQuestion: ${a.question}\nThey said: ${a.answer}`).join('\n\n')}
+
+Return a list. Each item has "answer" = the number of the answer it came from, and:
+- kind "story": something that happened — situation, what they did, what came of it. title = 4–8 words. body = 2–5 sentences in third person (use "they"), keeping every concrete detail, name of place/tool, and number they gave. One item per distinct story — a long answer often holds several.
+- kind "fact": a concrete fact (age, city, languages, studies, tools, instruments, sport and how often…). One short sentence.
+- kind "value": something they care about or want. kind "trait": how they are, as shown by what they said (not flattery).
+- "shows": comma-separated qualities an employer would read into it (e.g. "resilience, discipline, analysis") — empty for facts.
+- "private": true for romance/relationships, health, family conflict or anything intimate — those help understand the person but must never appear in a document. false otherwise.
+Never invent anything they did not say.`;
+  return json<(StoryItem & { answer: number })[]>(prompt, {
+    system: `You write ALL output in ${LANG_NAME[lang]}. You never invent facts about the person.`,
+    schema: EXTRACT_STORIES_SCHEMA,
+    maxTokens: 6000,
+  });
+}
+
+/**
+ * The fit check: an honest read of a handful of real postings against the CV. It never sees
+ * or produces a posting that is not in the list it was given.
+ */
+export interface FitVerdict { id: number; fit: 'great' | 'good' | 'stretch' | 'no'; why: string; gap: string }
+
+const FIT_SCHEMA: Schema = {
+  type: 'array',
+  items: {
+    type: 'object',
+    properties: {
+      id: { type: 'integer' },
+      fit: { type: 'string', enum: ['great', 'good', 'stretch', 'no'] },
+      why: S, gap: S,
+    },
+    required: ['id', 'fit', 'why', 'gap'],
+  },
+};
+
+export async function judgeFit(cv: string, jobs: { id: number; title: string; company: string; location: string; description: string }[], lang: Lang) {
+  const prompt = `Here is a candidate's CV, then job postings. For EACH posting, judge how well this candidate fits it today.
+
+"fit":
+- "great": they meet the core requirements and the level matches.
+- "good": a reasonable application; one or two requirements are thin.
+- "stretch": possible but clearly under-qualified, or a different field.
+- "no": wrong level (e.g. senior), wrong field, or a hard requirement they cannot meet.
+"why": one short sentence, specific to this posting, written TO the candidate in the second person ("You have…", "Tenés…") — never "the candidate".
+"gap": the single most important thing the posting asks for that the CV does not show, or "" if none.
+Return one object per posting, with its id. Be honest; do not flatter.
+
+CV:
+${cv.slice(0, 5000)}
+
+Postings:
+${jobs.map((j) => `[id ${j.id}] ${j.title} — ${j.company} — ${j.location}\n${j.description.slice(0, 1200)}`).join('\n\n')}`;
+
+  return json<FitVerdict[]>(prompt, { system: houseRules(lang), schema: FIT_SCHEMA });
+}
+
+/**
+ * Embeddings: a vector per text, so thousands of postings can be ranked against the CV in
+ * milliseconds without an AI call each. Vectors are normalised here, because a truncated
+ * gemini-embedding-001 vector is not unit length.
+ */
+export class RateLimited extends Error {
+  constructor(public window: 'minute' | 'day') { super(`rate-limited:${window}`); }
+}
+
+const EMBED_MODEL = 'gemini-embedding-001';
+const EMBED_DIM = 768;
+
+/**
+ * Retrieval mode, not similarity: what you are looking for is the query, each posting is a
+ * document. That asymmetry is what this model was trained for, and it ranks noticeably better.
+ */
+export async function embed(texts: string[], task: 'RETRIEVAL_QUERY' | 'RETRIEVAL_DOCUMENT' = 'RETRIEVAL_DOCUMENT', attempt = 0): Promise<number[][]> {
+  const key = getKey();
+  if (!key) throw new Error('No Google API key set. Add one in the AI step, or put GOOGLE_API_KEY in your .env file.');
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${EMBED_MODEL}:batchEmbedContents?key=${encodeURIComponent(key)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      requests: texts.map((text) => ({
+        model: `models/${EMBED_MODEL}`,
+        content: { parts: [{ text: text.slice(0, 6000) }] },
+        taskType: task,
+        outputDimensionality: EMBED_DIM,
+      })),
+    }),
+  });
+  if (!res.ok) {
+    if (res.status === 503 && attempt < 2) { await sleep(2000); return embed(texts, task, attempt + 1); }
+    const body = await res.text();
+    // The free tier counts each text, about a hundred a minute: the caller waits and resumes.
+    if (res.status === 429) throw new RateLimited(/per ?day|daily/i.test(body) ? 'day' : 'minute');
+    throw new Error(`Google embeddings returned ${res.status}. ${body.replace(/\s+/g, ' ').slice(0, 160)}`);
+  }
+  const data = await res.json() as { embeddings?: { values: number[] }[] };
+  return (data.embeddings ?? []).map(({ values }) => {
+    const n = Math.hypot(...values) || 1;
+    return values.map((v) => Math.round((v / n) * 1e4) / 1e4);
+  });
 }
 
 /**

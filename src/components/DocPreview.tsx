@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from './ui.tsx';
 import { api } from '../lib/api.ts';
 import { useT, useUILang } from '../lib/i18n.ts';
-import { renderMarkdown } from '../lib/markdown.ts';
+import CVSheet from './CVSheet.tsx';
 
 /**
  * A generated document, shown as the page it will be rather than as text in a box.
@@ -49,13 +49,7 @@ export default function DocPreview({
         </header>
 
         <div className="flex-1 overflow-y-auto bg-sunken/60 p-6">
-          <div
-            className="sheet sheet-in mx-auto max-w-[640px] rounded-lg bg-white px-10 py-9 text-[12.5px] leading-relaxed text-ink-900 shadow-xl
-                       [&_a]:text-brand-700 [&_h1]:mb-1 [&_h1]:text-2xl [&_h1]:font-bold
-                       [&_h2]:mt-5 [&_h2]:mb-2 [&_h2]:border-b [&_h2]:border-line [&_h2]:pb-1 [&_h2]:text-[12px] [&_h2]:font-semibold [&_h2]:uppercase [&_h2]:tracking-wider
-                       [&_li]:mb-1 [&_li]:ml-5 [&_li]:list-disc [&_p]:mb-1"
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(markdown) }}
-          />
+          <CVSheet markdown={markdown} className="sheet sheet-in" />
         </div>
 
         <footer className="flex flex-wrap items-center gap-2 border-t border-line bg-surface px-6 py-4">

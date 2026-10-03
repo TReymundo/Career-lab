@@ -74,11 +74,48 @@ export const api = {
   aiTranslate: (payload: { text: string; to: 'es' | 'en' }) =>
     post('/api/ai/translate', payload) as Promise<{ text: string }>,
 
+  /* --- Finding jobs (Stage 2) --- */
+  browseJobs: (params: Record<string, string | number | undefined>) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '') qs.set(k, String(v));
+    return fetch(`/api/jobs/browse?${qs}`).then(json) as Promise<BrowseResult>;
+  },
+  getKit: (jobId: number) => fetch(`/api/kit/${jobId}`).then(json) as Promise<{ kit: Kit | null }>,
+  buildKit: (jobId: number, lang: string, jd?: string) => post(`/api/kit/${jobId}/build`, { lang, jd }) as Promise<{ kit: Kit }>,
+  saveKitDecisions: (jobId: number, decisions: KitDecisions) =>
+    fetch(`/api/kit/${jobId}/decisions`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decisions }) }).then(json),
+  kits: () => fetch('/api/kits').then(json) as Promise<{ kits: { job_id: number; application_id: number | null; created_at: string }[] }>,
+  storyAnswer: (body: { question: string; answer: string; theme: string; lang: string }) => post('/api/story/answer', body) as Promise<StoryStatus>,
+  storyStatus: () => fetch('/api/story/status').then(json) as Promise<StoryStatus>,
+  storyProcess: (lang: string) => post('/api/story/process', { lang }) as Promise<StoryStatus>,
+  storyTurn: (body: { question: string; answer: string; theme: string; isFollowUp: boolean; lang: string }) =>
+    post('/api/story/turn', body) as Promise<{ reaction: string; followUp: string; items: { id: number; kind: string; title: string; private: boolean }[]; error?: string }>,
+  journey: () => fetch('/api/journey').then(json) as Promise<JourneyStatus>,
+  aiHealth: () => fetch('/api/ai/health').then(json) as Promise<AiHealth>,
+  addAiProvider: (kind: string, key: string) => post('/api/ai/providers', { kind, key }) as Promise<{ ok: boolean; model?: string; error?: string }>,
+  testAiProvider: (id: string) => post(`/api/ai/providers/${id}/test`, {}) as Promise<{ ok: boolean; model?: string; error?: string }>,
+  removeAiProvider: (id: string) => post(`/api/ai/providers/${id}/remove`, {}),
+  aiTitles: (cv: string, lang: string, aim?: { fields: string[]; experience: string }) =>
+    post('/api/ai/titles', { cv, lang, ...aim }) as Promise<{ titles: string[] }>,
+  scoreJobs: (cv: string) => post('/api/jobs/score', { cv }) as Promise<{ scored: number; remaining: number; wait: number }>,
+  fitJobs: (ids: number[], cv: string, lang: string) => post('/api/jobs/fit', { ids, cv, lang }) as Promise<{ judged: number }>,
+  sourcesStatus: () => fetch('/api/sources/status').then(json) as Promise<SourcesStatus>,
+  connectGmail: (user: string, password: string) => post('/api/sources/gmail', { user, password }) as Promise<{ configured: boolean }>,
+  disconnectGmail: () => post('/api/sources/gmail/disconnect', {}),
+  setJSearchKey: (key: string) =>
+    fetch('/api/sources/jsearch', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key }) }).then(json),
+  pullJSearch: (queries: { query: string; country: string; language: string }[]) =>
+    post('/api/jobs/jsearch', { queries }) as Promise<{ inserted: number; fetched: number; requests: number; used: number; limit: number; errors: string[] }>,
+  pullGetOnBoard: (queries: string[]) => post('/api/jobs/getonbrd', { queries }) as Promise<{ inserted: number; fetched: number; errors: string[] }>,
+  setGroqKey: (key: string) => post('/api/sources/groq', { key }) as Promise<{ configured: boolean }>,
+  rescopeJobs: () => post('/api/jobs/rescope', {}) as Promise<{ removed: number }>,
+  scanAlerts: (days = 60) => post('/api/alerts/scan', { days }) as Promise<{ emails: number; found: number; inserted: number; errors: string[] }>,
+
   setSetting: (key: string, value: string) =>
     fetch(`/api/setting/${key}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value }) }).then(json),
 
   parseCV: (payload: { text?: string; base64?: string; filename?: string }) =>
-    post('/api/cv/parse', payload) as Promise<{ parsed: ParsedCV; chars: number }>,
+    post('/api/cv/parse', payload) as Promise<{ parsed: ParsedCV; chars: number; via: 'ai' | 'rules' }>,
   applyCV: (parsed: ParsedCV, replaceExisting: boolean) =>
     post('/api/cv/apply', { parsed, replaceExisting }) as Promise<{ experiences: number }>,
 
@@ -99,6 +136,47 @@ export const api = {
   },
 };
 
+export interface BrowseJob extends Job { rank: number; match: number; reasons: string[] }
+export interface Facet { v: string | number; n: number }
+export interface BrowseResult {
+  total: number;
+  rows: BrowseJob[];
+  facets: { country: Facet[]; city: Facet[]; level: Facet[]; lang: Facet[]; source: Facet[]; remote: Facet[] };
+  counts: { total: number; unscored: number; saved: number; dismissed: number };
+  views: { foryou: number; new: number; all: number };
+}
+export interface SourcesStatus {
+  gmail: { configured: boolean; user: string; last: string };
+  jsearch: { configured: boolean; used: number; limit: number };
+  ai: boolean;
+  groq: boolean;
+}
+export interface StoryStatus { pending: number; working: boolean; lastError: string; retryIn: number }
+
+export interface Kit {
+  job_id: number; application_id: number | null; jd: string; created_at: string;
+  data: {
+    requirements: { text: string; covered: 'yes' | 'partly' | 'no'; evidence: string }[];
+    headline: string; summary: string;
+    edits: { target: string; to: string; why: string }[];
+    order: number[]; drop: number[]; skills: string;
+    gaps: { requirement: string; question: string }[];
+    why: string; letter: string; lang: 'en' | 'es'; hasPosting: boolean; builtAt: string;
+  };
+  decisions: KitDecisions;
+}
+/** What you rejected (everything is accepted by default) and your edited letter. */
+export interface KitDecisions { rejected?: string[]; letter?: string }
+
+export interface JourneyStatus {
+  jobs: { total: number; foryou: number; saved: number };
+  apply: { tailored: number; saved: number };
+  track: { applied: number; interviewing: number };
+}
+export interface AiHealth {
+  providers: { id: string; kind: string; name: string; hint: string }[];
+  routes: { id: string; provider: string; label: string; ok: number; resting: number; lastError: string }[];
+}
 export interface AiStatus { configured: boolean; source: 'env' | 'app' | 'none'; model: string; hint: string }
 export interface BulletSuggestion { original: string; improved: string; why: string; needs: string[] }
 export interface FieldItem { target: string; label: string; value: string }

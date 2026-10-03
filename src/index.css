@@ -24,6 +24,92 @@
   --color-ink-400: #83998f;
 
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
+
+  /* The identity: a deep forest green that holds the journey, and a lime that marks where you are. */
+  --color-forest-950: #0b2318;
+  --color-forest-900: #123524;
+  --color-forest-800: #1a4630;
+  --color-forest-700: #24583d;
+  --color-lime-300: #dcf79a;
+  --color-lime-400: #c9f26b;
+  --color-lime-500: #b3e04a;
+}
+
+.font-display { font-family: var(--font-display); font-optical-sizing: auto; letter-spacing: -0.015em; }
+h1, h2 { font-family: var(--font-display); font-optical-sizing: auto; letter-spacing: -0.015em; }
+
+/* --- The journey: a path that draws itself, and steps that light up as you reach them. --- */
+@keyframes draw { from { stroke-dashoffset: var(--len, 400); } to { stroke-dashoffset: 0; } }
+@keyframes glow { 0%, 100% { box-shadow: 0 0 0 0 rgb(201 242 107 / .55); } 50% { box-shadow: 0 0 0 7px rgb(201 242 107 / 0); } }
+@keyframes page-fwd  { from { opacity: 0; transform: translateX(36px); } to { opacity: 1; transform: none; } }
+@keyframes page-back { from { opacity: 0; transform: translateX(-36px); } to { opacity: 1; transform: none; } }
+@keyframes page-up   { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes pop-heart { 0% { transform: scale(1); } 35% { transform: scale(1.45); } 70% { transform: scale(.9); } 100% { transform: scale(1); } }
+@keyframes float-slow { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(18px, -14px); } }
+@keyframes shine { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+/* The interviewer: a lime-to-green orb that breathes, swirls while thinking, and blushes while listening. */
+@keyframes orb-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+@keyframes orb-swirl { to { transform: rotate(360deg); } }
+.orb {
+  background: conic-gradient(from 200deg, var(--color-lime-300), var(--color-brand-400), var(--color-forest-700), var(--color-lime-400), var(--color-lime-300));
+  box-shadow: inset 0 0 18px rgb(255 255 255 / .5), 0 8px 30px -8px rgb(31 140 88 / .6);
+  animation: orb-breathe 3.2s ease-in-out infinite;
+}
+.orb-think { animation: orb-swirl 1.1s linear infinite; }
+.orb-listen { filter: hue-rotate(-95deg) saturate(1.3); }
+
+/* The tour's spotlight: everything outside it is dimmed by one enormous shadow. */
+.tour-spot { box-shadow: 0 0 0 9999px rgb(11 35 24 / .72), 0 0 0 3px var(--color-lime-400), 0 0 30px 6px rgb(201 242 107 / .45); }
+
+/* --- The CV start screens: a dropzone with marching edges, a page that bobs, a chat that types. --- */
+@keyframes march { to { background-position: 40px 0, -40px 100%, 0 -40px, 100% 40px; } }
+.dropzone {
+  background-image:
+    linear-gradient(90deg, var(--color-brand-300) 50%, transparent 50%), linear-gradient(90deg, var(--color-brand-300) 50%, transparent 50%),
+    linear-gradient(0deg, var(--color-brand-300) 50%, transparent 50%), linear-gradient(0deg, var(--color-brand-300) 50%, transparent 50%);
+  background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+  background-size: 20px 2px, 20px 2px, 2px 20px, 2px 20px;
+  background-position: 0 0, 0 100%, 0 0, 100% 0;
+  background-color: var(--color-surface);
+}
+.dropzone:hover, .dropzone-over { animation: march 1.2s linear infinite; }
+.dropzone-over { background-color: rgb(220 247 154 / .25); }
+
+@keyframes bob { 0%, 100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-7px) rotate(2deg); } }
+.float-doc { display: grid; animation: bob 3.4s ease-in-out infinite; }
+
+@keyframes sweep { 0% { top: -10%; } 100% { top: 110%; } }
+.scan-line { position: absolute; left: 0; right: 0; top: -10%; height: 3px; background: var(--color-lime-400); box-shadow: 0 0 14px 3px var(--color-lime-300); opacity: 0; }
+.group:hover .scan-line { opacity: 1; animation: sweep 1.3s ease-in-out infinite; }
+
+@keyframes chat-in { 0%, 8% { opacity: 0; transform: translateY(8px) scale(.96); } 18%, 88% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
+.chat-1, .chat-2, .chat-3 { animation: chat-in 6s cubic-bezier(.22,.9,.3,1) infinite backwards; }
+.chat-2 { animation-delay: .9s; }
+.chat-3 { animation-delay: 1.8s; }
+
+/* Dropdown panels grow out of their button; a job you send to Apply slides away and folds up. */
+@keyframes dropdown-in { from { opacity: 0; transform: scale(.96) translateY(-4px); } to { opacity: 1; transform: none; } }
+@keyframes job-leave {
+  0%   { opacity: 1; transform: none; max-height: 240px; }
+  45%  { opacity: 0; transform: translateX(60px); max-height: 240px; margin-bottom: 0; }
+  100% { opacity: 0; transform: translateX(60px); max-height: 0; padding-top: 0; padding-bottom: 0; margin-top: -8px; border-width: 0; }
+}
+.dropdown-in { animation: dropdown-in .18s cubic-bezier(.22,.9,.3,1) both; }
+.job-leave { animation: job-leave .55s cubic-bezier(.65,0,.35,1) forwards; overflow: hidden; }
+
+.path-draw { stroke-dasharray: var(--len, 400); animation: draw 1.1s cubic-bezier(.65,0,.35,1) both; }
+.step-glow { animation: glow 2.4s ease-in-out infinite; }
+.page-fwd  { animation: page-fwd .45s cubic-bezier(.22,.9,.3,1) both; }
+.page-back { animation: page-back .45s cubic-bezier(.22,.9,.3,1) both; }
+.page-up   { animation: page-up .4s cubic-bezier(.22,.9,.3,1) both; }
+.pop-heart { animation: pop-heart .45s cubic-bezier(.3,1.5,.5,1); }
+.float-slow { animation: float-slow 16s ease-in-out infinite; }
+.text-shine {
+  background: linear-gradient(110deg, var(--color-forest-900) 35%, var(--color-brand-500) 50%, var(--color-forest-900) 65%);
+  background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: shine 6s linear infinite;
 }
 
 html, body, #root { height: 100%; }
@@ -108,6 +194,102 @@ body {
   border-radius: 2px;
   animation: confetti-fall 1.7s cubic-bezier(.3,.6,.5,1) both;
 }
+
+/*
+ * --- The printed page. ---
+ * A classic one-column CV: serif, centred name and contact line, rules under each heading,
+ * dates and places right-aligned. The PDF and Word exports (server/export.ts) draw the same.
+ */
+/* Sizes are real print sizes on an A4 page at 96 dpi (14px = 10.5pt); CVSheet scales the page. */
+.cv-page {
+  /* Times on purpose: it is the face the PDF export embeds, so the lines break in the same places. */
+  font-family: "Times New Roman", Times, serif;
+  font-size: 14px;
+  line-height: 1.42;
+  color: #111;
+  background: #fff;
+  padding: 58px 64px;
+}
+.cv-page h1, .cv-page h2 { font-family: inherit; letter-spacing: normal; }
+.cv-page h1 { text-align: center; font-size: 30px; font-weight: 700; line-height: 1.15; margin: 0 0 6px; }
+.cv-page .md-center { text-align: center; margin: 0 0 2px; }
+.cv-page hr { border: 0; border-top: 1px solid #222; margin: 8px 0 12px; }
+.cv-page .md-quote { font-style: italic; margin: 0 0 4px; }
+.cv-page h2 {
+  font-size: 15.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em;
+  border-bottom: 1px solid #222; padding-bottom: 3px; margin: 22px 0 10px;
+}
+.cv-page .md-row { display: flex; justify-content: space-between; gap: 20px; }
+.cv-page .md-entry { margin-top: 12px; }
+.cv-page h2 + .md-entry { margin-top: 0; }
+.cv-page .md-right { text-align: right; flex-shrink: 0; }
+.cv-page ul { list-style: disc; padding-left: 26px; margin: 3px 0 2px; }
+.cv-page li { margin: 1px 0; padding-left: 4px; }
+.cv-page p { margin: 0 0 4px; }
+.cv-page a { color: inherit; }
+
+/* --- The question flow: each screen slides in from the side you are travelling towards. --- */
+@keyframes screen-fwd  { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes screen-back { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+.animate-screen-fwd  { animation: screen-fwd .38s cubic-bezier(.22,.9,.3,1) both; }
+.animate-screen-back { animation: screen-back .38s cubic-bezier(.22,.9,.3,1) both; }
+
+/* A page with a scan line passing over it, while an uploaded CV is being read. */
+@keyframes scan { 0%, 100% { top: 8%; } 50% { top: 84%; } }
+.scan-doc {
+  position: relative;
+  width: 44px; height: 56px;
+  border-radius: 6px;
+  background:
+    linear-gradient(var(--color-line-strong), var(--color-line-strong)) 8px 12px / 22px 3px no-repeat,
+    linear-gradient(var(--color-line), var(--color-line)) 8px 21px / 28px 3px no-repeat,
+    linear-gradient(var(--color-line), var(--color-line)) 8px 29px / 24px 3px no-repeat,
+    linear-gradient(var(--color-line), var(--color-line)) 8px 37px / 27px 3px no-repeat,
+    #fff;
+  border: 1px solid var(--color-line-strong);
+  box-shadow: 0 8px 20px -12px rgb(16 35 26 / .4);
+  overflow: hidden;
+}
+.scan-doc::after {
+  content: '';
+  position: absolute; left: 0; right: 0; height: 3px;
+  background: var(--color-brand-400);
+  box-shadow: 0 0 12px 2px var(--color-brand-300);
+  animation: scan 1.4s ease-in-out infinite;
+}
+
+/*
+ * --- Landing hero: a CV writes itself, earns its checks, then matching jobs arrive. ---
+ *
+ * One 9-second loop. Every element's resting style is its finished state, and the keyframes
+ * only borrow it for part of the cycle, so with motion reduced the picture is simply complete.
+ */
+@keyframes hero-line {
+  0%, 6%    { transform: scaleX(0); }
+  16%, 90%  { transform: scaleX(1); }
+  97%, 100% { transform: scaleX(0); }
+}
+@keyframes hero-pop {
+  0%, 30%   { opacity: 0; transform: scale(.6); }
+  36%       { opacity: 1; transform: scale(1.08); }
+  40%, 90%  { opacity: 1; transform: scale(1); }
+  97%, 100% { opacity: 0; transform: scale(.9); }
+}
+@keyframes hero-card {
+  0%, 52%   { opacity: 0; transform: translateX(36px); }
+  60%, 90%  { opacity: 1; transform: none; }
+  97%, 100% { opacity: 0; transform: translateX(12px); }
+}
+@keyframes hero-float { 0%, 100% { transform: translateY(0) rotate(-1.2deg); } 50% { transform: translateY(-8px) rotate(-.6deg); } }
+@keyframes hero-blob  { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(24px, -18px) scale(1.08); } }
+
+/* `backwards` holds the first frame during each element's stagger delay, so nothing flashes. */
+.hero-line, .hero-pop, .hero-card { animation-fill-mode: backwards; }
+.hero-sheet { animation: hero-float 6s ease-in-out infinite; }
+.hero-line  { transform-origin: left; animation: hero-line 9s cubic-bezier(.4,0,.2,1) infinite; }
+.hero-pop   { animation: hero-pop 9s cubic-bezier(.3,1.4,.5,1) infinite; }
+.hero-card  { animation: hero-card 9s cubic-bezier(.22,.9,.3,1) infinite; }
+.hero-blob  { animation: hero-blob 14s ease-in-out infinite; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

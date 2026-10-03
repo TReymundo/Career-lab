@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from './ui.tsx';
 import { api } from '../lib/api.ts';
 import { useT, useUILang } from '../lib/i18n.ts';
-import { renderMarkdown } from '../lib/markdown.ts';
-import { buildCV } from '../lib/templates.ts';
+import CVSheet from './CVSheet.tsx';
+import { buildCV, detectLang } from '../lib/templates.ts';
 import type { Store, Track } from '../lib/types.ts';
 
 /**
@@ -25,7 +25,9 @@ export default function CVReveal({ store, onClose }: { store: Store; onClose: ()
   const track = (() => {
     try { return (JSON.parse(store.setting['tracks'] || '[]') as Track[])[0] ?? 'other'; } catch { return 'other' as Track; }
   })();
-  const markdown = buildCV(store.profile, store.experience, { track, lang, template: 'ats' });
+  // The CV's own language, not the app's: a Spanish CV gets Spanish headings.
+  const cvLang = detectLang(store.profile, store.experience);
+  const markdown = buildCV(store.profile, store.experience, { track, lang: cvLang, template: 'ats' });
 
   // Three beats: the sheet arrives, the words land, the buttons appear.
   useEffect(() => {
@@ -38,7 +40,7 @@ export default function CVReveal({ store, onClose }: { store: Store; onClose: ()
   const download = async (format: 'pdf' | 'docx') => {
     setBusy(format);
     try {
-      const name = await api.exportFile({ markdown, format, kind: 'cv', lang, name: store.profile.name });
+      const name = await api.exportFile({ markdown, format, kind: 'cv', lang: cvLang, name: store.profile.name });
       setSaved(name);
     } catch (e) {
       setSaved(e instanceof Error ? e.message : String(e));
@@ -80,13 +82,7 @@ export default function CVReveal({ store, onClose }: { store: Store; onClose: ()
         </header>
 
         <div className="flex-1 overflow-y-auto bg-sunken/60 p-6">
-          <div
-            className={`sheet mx-auto max-w-[640px] rounded-lg bg-white px-10 py-9 text-[12.5px] leading-relaxed text-ink-900 shadow-xl
-                        [&_a]:text-brand-700 [&_h1]:mb-1 [&_h1]:text-2xl [&_h1]:font-bold
-                        [&_h2]:mt-5 [&_h2]:mb-2 [&_h2]:border-b [&_h2]:border-line [&_h2]:pb-1 [&_h2]:text-[12px] [&_h2]:font-semibold [&_h2]:uppercase [&_h2]:tracking-wider
-                        [&_li]:mb-1 [&_li]:ml-5 [&_li]:list-disc [&_p]:mb-1 ${stage >= 1 ? 'sheet-in' : 'opacity-0'}`}
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(markdown) }}
-          />
+          <CVSheet markdown={markdown} className={`sheet ${stage >= 1 ? 'sheet-in' : 'opacity-0'}`} />
         </div>
 
         <footer className={`flex flex-wrap items-center gap-2 border-t border-line bg-surface px-6 py-4 transition-all duration-500 ${

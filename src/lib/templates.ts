@@ -37,13 +37,26 @@ export const TEMPLATES: { id: TemplateId; label: Record<Lang, string>; note: Rec
 
 const T = {
   profile: { en: 'Profile', es: 'Perfil' },
-  experience: { en: 'Experience', es: 'Experiencia profesional' },
-  education: { en: 'Education', es: 'Formación académica' },
-  extra: { en: 'Leadership & Extracurricular', es: 'Liderazgo y actividades' },
-  skills: { en: 'Skills', es: 'Competencias y herramientas' },
+  experience: { en: 'Professional Experience', es: 'Experiencia profesional' },
+  education: { en: 'Education', es: 'Educación' },
+  extra: { en: 'Projects & Activities', es: 'Proyectos y actividades' },
+  skills: { en: 'Skills', es: 'Habilidades' },
   languages: { en: 'Languages', es: 'Idiomas' },
   present: { en: 'Present', es: 'Actualidad' },
 } as const;
+
+/**
+ * Which language the CV itself is written in, read from its content rather than from the
+ * app's UI setting — a Spanish CV gets Spanish headings even while the app is in English.
+ */
+export function detectLang(profile: Profile, experience: Experience[]): Lang {
+  const text = [profile.headline, profile.summary, profile.skills,
+    ...experience.flatMap((e) => [e.title, ...parseBullets(e.bullets).map((b) => b.text)])].join(' ').toLowerCase();
+  const es = (text.match(/\b(de|la|el|los|las|y|en|con|para|del|una|por)\b|ción|ñ/g) ?? []).length;
+  const en = (text.match(/\b(the|and|of|to|with|for|in|a|an|by|on)\b/g) ?? []).length;
+  if (es + en < 6) return profile.languages.toLowerCase().includes('nativ') && /espa|spanish/i.test(profile.languages) ? 'es' : 'en';
+  return es > en ? 'es' : 'en';
+}
 
 const ORDER: Record<TemplateId, ('profile' | 'work' | 'education' | 'extra' | 'skills' | 'languages')[]> = {
   ats: ['profile', 'work', 'education', 'extra', 'skills', 'languages'],
@@ -58,10 +71,40 @@ export interface CVOptions {
   lang: Lang;
   template: TemplateId;
   maxBullets?: number;
+  /** A tailored version: accepted rewrites laid over the master CV, which itself is never changed. */
+  tailor?: Tailor;
 }
 
-export function buildCV(profile: Profile, experience: Experience[], opts: CVOptions): string {
-  const { track, lang, template } = opts;
+export interface Tailor {
+  headline?: string;
+  summary?: string;
+  /** "ENTRY.INDEX" → new wording for that line. */
+  lines?: Record<string, string>;
+  /** Entry ids, most relevant first. */
+  order?: number[];
+  /** Entry ids left out of this version. */
+  drop?: number[];
+  skills?: string;
+}
+
+export function buildCV(profile: Profile, experienceIn: Experience[], opts: CVOptions): string {
+  const { track, lang, template, tailor } = opts;
+  if (tailor) {
+    profile = { ...profile, headline: tailor.headline ?? profile.headline, summary: tailor.summary ?? profile.summary, skills: tailor.skills ?? profile.skills };
+  }
+  // Tailoring: drop, reorder, and swap in reworded lines — on copies, never on the master CV.
+  let experience = tailor?.drop?.length ? experienceIn.filter((e) => !tailor.drop!.includes(e.id)) : experienceIn;
+  if (tailor?.order?.length) {
+    const rank = (id: number) => { const i = tailor.order!.indexOf(id); return i < 0 ? 999 : i; };
+    experience = [...experience].sort((a, b) => rank(a.id) - rank(b.id));
+  }
+  if (tailor?.lines && Object.keys(tailor.lines).length) {
+    experience = experience.map((e) => {
+      const bs = parseBullets(e.bullets);
+      if (!bs.some((_, i) => tailor.lines![`${e.id}.${i}`])) return e;
+      return { ...e, bullets: JSON.stringify(bs.map((b, i) => ({ ...b, text: tailor.lines![`${e.id}.${i}`] ?? b.text, es: tailor.lines![`${e.id}.${i}`] ? '' : b.es }))) };
+    });
+  }
   const max = opts.maxBullets ?? MAX_BULLETS[template];
   const t = (k: keyof typeof T) => T[k][lang];
   const es = lang === 'es';
@@ -71,36 +114,72 @@ export function buildCV(profile: Profile, experience: Experience[], opts: CVOpti
   const skills = (es && profile.skills_es) || profile.skills;
   const languages = (es && profile.languages_es) || profile.languages;
 
+  /*
+   * The layout is the classic one-column CV recruiters expect, written in a few Markdown
+   * extensions every renderer here understands (screen, PDF and Word):
+   *   ^ text        a centred line
+   *   ---           a full-width rule
+   *   > text        an italic paragraph
+   *   ### a || b    the first row of an entry: bold left, right-aligned b
+   *   a || b        any row with a right-aligned part
+   */
+  const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim();
   const head = [
     `# ${profile.name || (es ? 'Tu nombre' : 'Your Name')}`,
-    [headline, profile.location].filter(Boolean).join(' · '),
-    [profile.email, profile.phone, profile.linkedin].filter(Boolean).join(' · '),
+    headline && `^ ${oneLine(headline)}`,
+    `^ ${[profile.location, profile.linkedin, profile.phone, profile.email].filter(Boolean).join(' • ')}`,
+    '---',
+    summary && `> ${oneLine(summary)}`,
   ].filter(Boolean).join('\n');
 
   const entries = (kind: Experience['kind']) => {
     const rows = experience.filter((e) => e.kind === kind);
     if (!rows.length) return '';
     return rows.map((e) => {
-      // An ongoing role is written in whichever language the CV is in, however it was typed.
-      const ongoing = !e.end_date.trim() || /^(present|current|now|actualidad|actual|presente|hoy)$/i.test(e.end_date.trim());
-      const dates = [e.start_date, ongoing ? t('present') : e.end_date].filter(Boolean).join(' – ');
-      const header = `**${e.org}**${e.title ? ` — ${e.title}` : ''}${e.location ? `, ${e.location}` : ''}`
-        + (dates ? `  \n*${dates}*` : '');
-      const bs = bulletsFor(e, track).slice(0, max)
-        .map((b) => `- ${(es && b.es) || b.text}`).join('\n');
-      return [header, bs].filter(Boolean).join('\n');
+      // An ongoing role is written in whichever language the CV is in, however it was typed —
+      // and only once there is a start date, or a lone "Present" reads as a mistake.
+      // Not for education either, where a lone year is a graduation year, nor when the start
+      // field already holds a whole range ("Año de graduación - 2021").
+      const end = e.end_date.trim();
+      const start = e.start_date.trim();
+      const saysPresent = /^(present|current|now|actualidad|actual|presente|hoy)$/i.test(end);
+      const ongoing = Boolean(start) && (saysPresent || (!end && kind !== 'education' && !/\s[-–]\s/.test(start)));
+      const dates = [e.start_date.trim(), ongoing ? t('present') : end].filter(Boolean).join(' – ');
+
+      // Projects read "What – Where"; jobs and schools read "Where" over "What".
+      const projectStyle = kind === 'extra' && e.title.trim() && e.org.trim();
+      const lead = projectStyle ? `${e.title.trim()} – ${e.org.trim()}` : (e.org.trim() || e.title.trim());
+      const sub = projectStyle || !e.org.trim() ? '' : e.title.trim();
+      const loc = e.location.trim();
+
+      const lines = [
+        `### **${lead}**${loc ? ` || **${loc}**` : dates ? ` || *${dates}*` : ''}`,
+        (sub || (loc && dates)) && `${sub}${loc && dates ? ` || *${dates}*` : ''}`,
+        ...bulletsFor(e, track).slice(0, max).map((b) => `- ${(es && b.es) || b.text}`),
+      ];
+      return lines.filter(Boolean).join('\n');
     }).join('\n\n');
+  };
+
+  /** "Data analysis - SQL, Python" per line becomes a bullet with the category in bold. */
+  const skillBlock = (raw: string) => {
+    const lines = raw.split('\n').map((l) => l.replace(/^[-•*]\s*/, '').trim()).filter(Boolean);
+    if (lines.length < 2) return raw.trim();
+    return lines.map((l) => {
+      const m = l.match(/^([^:–-]{2,40}?)\s*[:–-]\s+(.+)$/);
+      return m ? `- **${m[1]}** - ${m[2]}` : `- ${l}`;
+    }).join('\n');
   };
 
   const section = (heading: string, body: string) => (body ? `## ${heading}\n\n${body}` : '');
 
   const parts = ORDER[template].map((s) => {
     switch (s) {
-      case 'profile': return section(t('profile'), summary);
+      case 'profile': return ''; // the profile sits under the header, in italics, with no heading
       case 'work': return section(t('experience'), entries('work'));
       case 'education': return section(t('education'), entries('education'));
       case 'extra': return section(t('extra'), entries('extra'));
-      case 'skills': return section(t('skills'), skills);
+      case 'skills': return section(t('skills'), skillBlock(skills));
       case 'languages': return section(t('languages'), languages);
     }
   });

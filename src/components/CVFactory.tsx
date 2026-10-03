@@ -32,8 +32,9 @@ export default function CVFactory({ store, reload }: { store: Store; reload: () 
   const [failed, setFailed] = useState<{ company: string; error: string }[]>([]);
   const [preview, setPreview] = useState<{ title: string; subtitle: string; markdown: string; company: string } | null>(null);
 
+  // Only the jobs you saved (♥) in step 2, plus any already turned into an application.
   const load = async () => {
-    const res = await api.searchJobs({ limit: 800 });
+    const res = await api.searchJobs({ limit: 800, starred: true });
     setJobs(res.rows);
   };
   useEffect(() => { void load(); }, [store.application.length, store.document.length]);
@@ -136,9 +137,11 @@ export default function CVFactory({ store, reload }: { store: Store; reload: () 
   if (!pending.length && !generated.length) {
     return (
       <Empty>
-        {t('No saved jobs yet. Import some on the Jobs screen and they queue up here.',
-           'Todavía no hay avisos guardados. Importá algunos en Avisos y aparecen acá en la fila.')}
-        <div className="mt-3"><Link to="/jobs"><Button variant="primary">{t('Go to Jobs', 'Ir a Avisos')}</Button></Link></div>
+        <span className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-brand-50 text-2xl text-brand-600">♡</span>
+        <span className="block font-display text-xl font-semibold text-forest-900">{t('Nothing saved yet', 'Todavía no guardaste nada')}</span>
+        <span className="mt-1 block">{t('In step 2, tap ♡ on the jobs you want. They line up here, ready for a CV and a letter each.',
+           'En el paso 2, tocá ♡ en los avisos que te interesan. Aparecen acá, listos para un CV y una carta cada uno.')}</span>
+        <div className="mt-4"><Link to="/jobs"><Button variant="primary">{t('← Find jobs', '← Buscar avisos')}</Button></Link></div>
       </Empty>
     );
   }

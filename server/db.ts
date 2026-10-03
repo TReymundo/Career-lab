@@ -171,3 +171,62 @@ const jobCols = new Set(
 );
 if (!jobCols.has('category')) db.exec("ALTER TABLE job ADD COLUMN category TEXT NOT NULL DEFAULT ''");
 if (!jobCols.has('tailored_at')) db.exec("ALTER TABLE job ADD COLUMN tailored_at TEXT NOT NULL DEFAULT ''");
+
+/**
+ * v5: a list of thousands only works if every posting can be filtered and ranked. Where it is
+ * (country code, city, remote), how senior and in what language, how relevant it is to your CV
+ * (an embedding and a 0–100 score), and — for the ones you asked about — the AI's verdict.
+ */
+const V5: [string, string][] = [
+  ['country', "TEXT NOT NULL DEFAULT ''"], ['city', "TEXT NOT NULL DEFAULT ''"],
+  ['remote', 'INTEGER NOT NULL DEFAULT 0'], ['level', "TEXT NOT NULL DEFAULT ''"],
+  ['lang', "TEXT NOT NULL DEFAULT ''"], ['normalized', 'INTEGER NOT NULL DEFAULT 0'],
+  ['embedding', "TEXT NOT NULL DEFAULT ''"], ['relevance', 'REAL NOT NULL DEFAULT -1'],
+  ['fit', "TEXT NOT NULL DEFAULT ''"], ['fit_why', "TEXT NOT NULL DEFAULT ''"], ['fit_gap', "TEXT NOT NULL DEFAULT ''"],
+];
+for (const [col, type] of V5) if (!jobCols.has(col)) db.exec(`ALTER TABLE job ADD COLUMN ${col} ${type}`);
+
+/**
+ * v6: the story bank. What you tell the interviewer, and what it took from it — stories with
+ * a situation, an action and a result; facts; values and traits. Each can be private: used to
+ * understand you, never quoted in a document.
+ */
+db.exec(`
+CREATE TABLE IF NOT EXISTS story_answer (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  question TEXT NOT NULL DEFAULT '',
+  answer TEXT NOT NULL DEFAULT '',
+  theme TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS kit (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id INTEGER NOT NULL UNIQUE,
+  application_id INTEGER,
+  data TEXT NOT NULL DEFAULT '{}',           -- the AI's tailoring: requirements, rewrites, letter
+  decisions TEXT NOT NULL DEFAULT '{}',      -- which suggested changes you accepted or rejected
+  jd TEXT NOT NULL DEFAULT '',               -- posting text you pasted, when the source had none
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS story (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL DEFAULT 'story',        -- story | fact | value | trait
+  title TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL DEFAULT '',
+  shows TEXT NOT NULL DEFAULT '',            -- what it proves: resilience, analysis, leadership…
+  private INTEGER NOT NULL DEFAULT 0,
+  answer_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`);
+
+/**
+ * v7: answers are turned into stories in the background, so the AI being at its limit never
+ * loses anything. Answers from before this that never produced a story get processed now.
+ */
+const answerCols = new Set((db.prepare('PRAGMA table_info(story_answer)').all() as { name: string }[]).map((c) => c.name));
+if (!answerCols.has('processed')) {
+  db.exec('ALTER TABLE story_answer ADD COLUMN processed INTEGER NOT NULL DEFAULT 0');
+  db.exec('UPDATE story_answer SET processed = 1 WHERE id IN (SELECT DISTINCT answer_id FROM story WHERE answer_id IS NOT NULL)');
+}
+db.exec('CREATE INDEX IF NOT EXISTS job_country ON job (country, city)');

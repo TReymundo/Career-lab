@@ -4,7 +4,7 @@ import { Area, Badge, Button, Card, Empty, Field, Select, SectionTitle } from '.
 import { api, fmtDate } from '../lib/api.ts';
 import { useT, useUILang } from '../lib/i18n.ts';
 import Guide from '../components/Guide.tsx';
-import { renderMarkdown } from '../lib/markdown.ts';
+import CVSheet from '../components/CVSheet.tsx';
 import { TEMPLATES, buildCV, buildCover, keywordGap, missingTranslations, openPlaceholders, type TemplateId } from '../lib/templates.ts';
 import { coldOutreach, interviewDebrief, interviewPrep, tailoringPlan } from '../lib/tailor.ts';
 import { TRACKS, type Doc, type DocKind, type Lang, type Store, type Track } from '../lib/types.ts';
@@ -319,12 +319,9 @@ export default function Documents({ store, reload }: { store: Store; reload: () 
 
           <div>
             <SectionTitle>{t('Preview', 'Vista previa')}</SectionTitle>
-            <div className="print-sheet max-h-[520px] overflow-auto rounded-xl border border-line bg-white p-8 text-[13px] leading-relaxed text-ink-900
-                            [&_a]:text-brand-700 [&_a]:underline
-                            [&_h1]:mb-1 [&_h1]:text-2xl [&_h1]:font-bold
-                            [&_h2]:mt-5 [&_h2]:mb-2 [&_h2]:border-b [&_h2]:border-line [&_h2]:pb-1 [&_h2]:text-[13px] [&_h2]:font-semibold [&_h2]:uppercase [&_h2]:tracking-wider
-                            [&_li]:mb-1 [&_li]:ml-5 [&_li]:list-disc [&_p]:mb-1"
-                 dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />
+            <div className="print-sheet max-h-[560px] overflow-auto rounded-xl border border-line bg-sunken/60 p-3">
+              <CVSheet markdown={text} />
+            </div>
           </div>
         </div>
       </div>

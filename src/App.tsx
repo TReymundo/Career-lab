@@ -1,81 +1,56 @@
-import { useState } from 'react';
-import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { useStore } from './lib/api.ts';
+import { useEffect, useRef, useState } from 'react';
+import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { api, useStore, type JourneyStatus } from './lib/api.ts';
 import { setUILang, useT, useUILang } from './lib/i18n.ts';
-import { parseBullets, type Store } from './lib/types.ts';
+import { STEPS, stepIndex, stepStates } from './lib/journey.ts';
 import { ToastHost } from './components/Toast.tsx';
+import Journey, { Logo } from './components/Journey.tsx';
 import Landing from './pages/Landing.tsx';
 import Start from './pages/Start.tsx';
-import Dashboard from './pages/Dashboard.tsx';
 import Jobs from './pages/Jobs.tsx';
-import Pipeline from './pages/Pipeline.tsx';
 import Contacts from './pages/Contacts.tsx';
 import ProfilePage from './pages/Profile.tsx';
-import Documents from './pages/Documents.tsx';
 import Answers from './pages/Answers.tsx';
 import Inbox from './pages/Inbox.tsx';
+import Apply from './pages/Apply.tsx';
+import Track from './pages/Track.tsx';
+import AiKeys from './pages/AiKeys.tsx';
+import StoryPage from './pages/Story.tsx';
+import Tour, { TOUR_KEY } from './components/Tour.tsx';
 
 /**
- * The sidebar only shows what you have reached. Everything else stays out of the way until
- * it would mean something — a first screen full of unexplained tabs is how people bounce.
+ * The shell: the journey on the left, the page on the right.
+ *
+ * Every page belongs to one of four steps (My CV → Find jobs → Apply → Track) or to "More".
+ * Moving forward through the steps slides the page in from the right, moving back slides it
+ * from the left, so the order of things is something you feel, not just read.
  */
 type T = (en: string, es: string) => string;
 
-const NAV = [
-  { to: '/start', icon: '◎', label: (t: T) => t('Start here', 'Empezá acá'), sub: (t: T) => t('You and your CV', 'Vos y tu CV'),
-    unlock: () => true, opens: (t: T) => '' },
-  { to: '/jobs', icon: '⌕', label: (t: T) => t('Jobs', 'Avisos'), sub: (t: T) => t('Find and import openings', 'Encontrar e importar avisos'),
-    unlock: (s: Store) => s.experience.some((e) => parseBullets(e.bullets).length > 0),
-    opens: (t: T) => t('Opens once your CV has one line in it', 'Se abre cuando tu CV tiene una línea') },
-  { to: '/dashboard', icon: '◱', label: (t: T) => t('Write CVs', 'Escribir CVs'), sub: (t: T) => t('Turn saved jobs into CVs', 'Convertir avisos en CVs'),
-    unlock: (s: Store) => s.experience.some((e) => parseBullets(e.bullets).length > 0),
-    opens: (t: T) => t('Opens once your CV has one line in it', 'Se abre cuando tu CV tiene una línea') },
-  { to: '/profile', icon: '✎', label: (t: T) => t('My CV', 'Mi CV'), sub: (t: T) => t('Everything about you', 'Todo sobre vos'),
-    unlock: (s: Store) => s.experience.length > 0,
-    opens: (t: T) => t('Opens once you add anything to your CV', 'Se abre cuando agregás algo a tu CV') },
-  { to: '/documents', icon: '❐', label: (t: T) => t('Documents', 'Documentos'), sub: (t: T) => t('CV, letters, prep', 'CV, cartas, preparación'),
-    unlock: (s: Store) => s.application.length > 0 || s.document.length > 0,
-    opens: (t: T) => t('Opens once you create your CV', 'Se abre cuando creás tu CV') },
-  { to: '/pipeline', icon: '▤', label: (t: T) => t('Pipeline', 'Tablero'), sub: (t: T) => t('Track applications', 'Seguí tus postulaciones'),
-    unlock: (s: Store) => s.application.length > 0,
-    opens: (t: T) => t('Opens once you pick a job to apply to', 'Se abre cuando elegís un aviso') },
-  { to: '/answers', icon: '✍', label: (t: T) => t('Answer bank', 'Respuestas'), sub: (t: T) => t('Form answers', 'Respuestas de formularios'),
-    unlock: (s: Store) => s.document.length > 0,
-    opens: (t: T) => t('Opens once you generate your first documents', 'Se abre cuando generás tus primeros documentos') },
-  { to: '/contacts', icon: '⚇', label: (t: T) => t('Network', 'Contactos'), sub: (t: T) => t('People to follow up', 'Gente a la que seguir'),
-    unlock: (s: Store) => s.application.length > 0,
-    opens: (t: T) => t('Opens once you pick a job to apply to', 'Se abre cuando elegís un aviso') },
-  { to: '/inbox', icon: '✉', label: (t: T) => t('Inbox sync', 'Correo'), sub: (t: T) => t('Recruiter email', 'Mails de reclutadores'),
-    unlock: (s: Store) => s.application.some((a) => a.status === 'applied'),
-    opens: (t: T) => t('Opens once you have applied to something', 'Se abre cuando te postulaste a algo') },
-];
-
-const TITLES: Record<string, (t: T) => { title: string; sub: string }> = {
-  '/start': (t) => ({ title: t('Start here', 'Empezá acá'), sub: t('You and your CV. The rest has its own screens.', 'Vos y tu CV. El resto tiene sus propias pantallas.') }),
-  '/profile': (t) => ({ title: t('My CV', 'Mi CV'), sub: t('Your history, written once, in one place', 'Tu historia, escrita una vez, en un solo lugar') }),
-  '/jobs': (t) => ({ title: t('Jobs', 'Avisos'), sub: t('Bring openings in, search them, generate from them', 'Traé búsquedas, filtralas, generá desde ellas') }),
-  '/documents': (t) => ({ title: t('Documents', 'Documentos'), sub: t('Tailored CVs, cover letters, outreach and interview prep', 'CVs a medida, cartas, mensajes y preparación de entrevistas') }),
-  '/pipeline': (t) => ({ title: t('Pipeline', 'Tablero'), sub: t('Saved → Tailored → Applied → Interviewing → Offer', 'Guardado → Adaptado → Postulado → Entrevistas → Oferta') }),
+const EXTRA: Record<string, (t: T) => { title: string; sub: string }> = {
   '/answers': (t) => ({ title: t('Answer bank', 'Respuestas'), sub: t('The questions every form asks — write each once', 'Las preguntas que hace todo formulario — escribí cada una una vez') }),
   '/contacts': (t) => ({ title: t('Network', 'Contactos'), sub: t('People, and when to come back to them', 'Gente, y cuándo volver a escribirles') }),
-  '/dashboard': (t) => ({ title: t('Write CVs', 'Escribir CVs'), sub: t('Your saved jobs, turned into CVs written for each one', 'Tus avisos guardados, convertidos en CVs escritos para cada uno') }),
   '/inbox': (t) => ({ title: t('Inbox sync', 'Correo'), sub: t('Recruiter emails in English and Spanish, proposed not applied', 'Mails de reclutadores en inglés y español, propuestos no aplicados') }),
+  '/ai': (t) => ({ title: t('AI keys', 'Claves de IA'), sub: t('Several free AIs, rotated automatically — so nothing stops when one is busy', 'Varias IAs gratis, rotadas solas — así nada se frena cuando una está ocupada') }),
+  '/profile': (t) => ({ title: t('Advanced CV editor', 'Editor avanzado de CV'), sub: t('Every field, track tags and Spanish versions', 'Cada campo, etiquetas por área y versiones en español') }),
 };
 
 export default function App() {
   const { store, error, reload } = useStore();
   const { pathname } = useLocation();
-  // The preference sticks: someone who wants the whole menu should only have to say so once.
-  const [showAll, setShowAll] = useState(() => {
-    try { return localStorage.getItem('career-lab-show-all') === '1'; } catch { return false; }
-  });
-  const toggleShowAll = () => setShowAll((v) => {
-    try { localStorage.setItem('career-lab-show-all', v ? '0' : '1'); } catch { /* private window */ }
-    return !v;
-  });
   const t = useT();
-  const lang = useUILang();
-  const head = (TITLES[pathname] ?? TITLES['/start'])(t);
+  const [journey, setJourney] = useState<JourneyStatus | null>(null);
+  // The welcome tour runs once, the first time someone is inside the app; the "?" replays it.
+  const [tour, setTour] = useState(() => { try { return localStorage.getItem(TOUR_KEY) !== '1'; } catch { return false; } });
+
+  // The step status follows every change to your data, and every page change.
+  useEffect(() => { void api.journey().then(setJourney).catch(() => {}); }, [store, pathname]);
+
+  // Direction of travel decides which way the page slides in.
+  const here = stepIndex(pathname);
+  const prev = useRef(here);
+  const dir = here < 0 || prev.current < 0 ? 'page-up' : here > prev.current ? 'page-fwd' : here < prev.current ? 'page-back' : 'page-up';
+  useEffect(() => { prev.current = here; }, [here]);
 
   if (error) {
     return (
@@ -100,9 +75,9 @@ export default function App() {
   if (!store) {
     return (
       <div className="flex min-h-full">
-        <div className="w-60 border-r border-line bg-surface" />
+        <div className="w-64 bg-forest-950" />
         <div className="flex-1 space-y-4 p-8">
-          <div className="skeleton h-8 w-56 rounded-lg" />
+          <div className="skeleton h-10 w-72 rounded-lg" />
           <div className="skeleton h-24 rounded-xl" />
           <div className="skeleton h-64 rounded-xl" />
         </div>
@@ -110,100 +85,133 @@ export default function App() {
     );
   }
 
-  const unlocked = NAV.filter((n) => n.unlock(store));
-  const hidden = NAV.length - unlocked.length;
-  const visible = showAll ? NAV : unlocked;
+  const states = stepStates(store, journey, t);
+  const step = here >= 0 ? STEPS[here] : null;
+  const extra = EXTRA[pathname]?.(t);
 
   return (
     <div className="flex min-h-full">
       <ToastHost />
-      <aside className="no-print sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-line bg-surface md:flex">
-        <NavLink to="/" className="flex items-center gap-2 px-5 py-5 transition hover:opacity-80">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand-600 text-sm font-bold text-white">CL</span>
-          <span className="text-[15px] font-semibold tracking-tight">Career<span className="text-brand-600">Lab</span></span>
-        </NavLink>
-
-        <nav className="flex-1 space-y-0.5 px-3">
-          {visible.map((n) => {
-            const locked = !n.unlock(store);
-            return (
-              <NavLink
-                key={n.to}
-                to={n.to}
-                className={({ isActive }) =>
-                  `group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-150 ${
-                    isActive ? 'bg-brand-50 font-medium text-brand-700 shadow-[inset_2px_0_0_var(--color-brand-600)]'
-                             : locked ? 'text-ink-400 hover:bg-sunken' : 'text-ink-700 hover:bg-sunken'}`}
-              >
-                <span className="w-4 text-center text-base leading-none opacity-70 transition group-hover:opacity-100">{n.icon}</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate">{n.label(t)}</span>
-                  <span className="block truncate text-[11px] text-ink-400">{locked ? n.opens(t) : n.sub(t)}</span>
-                </span>
-                {locked && <span className="text-[10px] opacity-60" title={n.opens(t)}>🔒</span>}
-              </NavLink>
-            );
-          })}
-        </nav>
-
-        {(hidden > 0 || showAll) && (
-          <button onClick={toggleShowAll}
-                  className="mx-3 mb-2 rounded-lg border border-dashed border-line px-3 py-2 text-left text-[11px] text-ink-500 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700">
-            {showAll ? t('Show only what I’ve reached', 'Mostrar sólo lo que ya usé')
-                     : t(`Show all sections (${hidden} locked)`, `Ver todas las secciones (${hidden} bloqueadas)`)}
-          </button>
-        )}
-
-        <div className="border-t border-line px-5 py-4 text-[11px] leading-relaxed text-ink-400">
-          {t('Local only. Your data stays in', 'Todo local. Tus datos quedan en')} <code>data/career-lab.db</code>.
-        </div>
-      </aside>
+      {tour && <Tour onClose={() => setTour(false)} />}
+      <Journey states={states} />
 
       <div className="min-w-0 flex-1">
-        <header className="no-print sticky top-0 z-20 border-b border-line bg-canvas/85 backdrop-blur">
-          <div className="flex items-baseline justify-between gap-6 px-6 py-4 md:px-8">
-            <div>
-              <h1 className="text-lg font-semibold tracking-tight text-ink-900">{head.title}</h1>
-              <p className="text-sm text-ink-500">{head.sub}</p>
-            </div>
-            <div className="flex items-center gap-3">
-            <div className="flex overflow-hidden rounded-lg border border-line bg-surface text-xs">
-              {(['en', 'es'] as const).map((l) => (
-                <button key={l} onClick={() => setUILang(l)}
-                        className={`px-2.5 py-1.5 font-medium transition ${lang === l ? 'bg-brand-600 text-white' : 'text-ink-500 hover:bg-sunken'}`}>
-                  {l === 'en' ? 'EN' : 'ES'}
-                </button>
-              ))}
-            </div>
-            <nav className="flex gap-1 md:hidden">
-              {visible.map((n) => (
-                <NavLink key={n.to} to={n.to} title={n.label(t)}
-                         className={({ isActive }) => `rounded-md px-2 py-1 text-base ${isActive ? 'bg-brand-100 text-brand-700' : 'text-ink-500'}`}>
-                  {n.icon}
-                </NavLink>
-              ))}
-            </nav>
-            </div>
-          </div>
-        </header>
+        <MobileBar states={states} />
+        <PageHeader
+          eyebrow={step ? t(`Step ${step.n} of 4`, `Paso ${step.n} de 4`) : t('More', 'Más')}
+          title={pathname === '/story' ? t('Your story', 'Tu historia') : step ? step.title(t) : extra?.title ?? ''}
+          sub={pathname === '/story' ? t('A chat, not a form. What you tell it makes every letter sound like you.', 'Una charla, no un formulario. Lo que cuentes hace que cada carta suene a vos.') : step ? step.blurb(t) : extra?.sub ?? ''}
+          stepKey={pathname}
+          onTour={() => setTour(true)}
+        />
 
-        <main key={pathname} className="animate-rise px-6 py-6 md:px-8">
+        <main key={pathname} className={`${dir} px-6 pb-16 pt-2 md:px-10`}>
           <Routes>
-            <Route path="/" element={<Navigate to="/start" replace />} />
-            <Route path="/home" element={<Navigate to="/" replace />} />
-            <Route path="/start" element={<Start store={store} reload={reload} />} />
-            <Route path="/dashboard" element={<Dashboard store={store} reload={reload} />} />
+            <Route path="/cv" element={<Start store={store} reload={reload} />} />
+            <Route path="/start" element={<Navigate to="/cv" replace />} />
             <Route path="/jobs" element={<Jobs store={store} reload={reload} />} />
-            <Route path="/pipeline" element={<Pipeline store={store} reload={reload} />} />
+            <Route path="/apply" element={<Apply store={store} reload={reload} tab="write" />} />
+            <Route path="/dashboard" element={<Navigate to="/apply" replace />} />
+            <Route path="/documents" element={<Apply store={store} reload={reload} tab="docs" />} />
+            <Route path="/track" element={<Track store={store} reload={reload} />} />
+            <Route path="/pipeline" element={<Navigate to="/track" replace />} />
             <Route path="/contacts" element={<Contacts store={store} reload={reload} />} />
             <Route path="/profile" element={<ProfilePage store={store} reload={reload} />} />
-            <Route path="/documents" element={<Documents store={store} reload={reload} />} />
             <Route path="/answers" element={<Answers store={store} reload={reload} />} />
             <Route path="/inbox" element={<Inbox store={store} reload={reload} />} />
-            <Route path="*" element={<Navigate to="/start" replace />} />
+            <Route path="/ai" element={<AiKeys />} />
+            <Route path="/story" element={<StoryPage store={store} reload={reload} />} />
+            <Route path="*" element={<Navigate to="/cv" replace />} />
           </Routes>
+
+          {here >= 0 && here < STEPS.length - 1 && states[here]?.done && (
+            <NextStep to={STEPS[here + 1].to} label={STEPS[here + 1].label(t)} n={here + 2}
+                      body={[
+                        t('Your CV is ready. Now find the jobs to aim it at.', 'Tu CV está listo. Ahora buscá avisos a los que apuntarlo.'),
+                        t('You have saved jobs. Write a CV and letter for each.', 'Tenés avisos guardados. Escribí un CV y una carta para cada uno.'),
+                        t('Documents written. Send them, then track every application.', 'Documentos listos. Envialos, y seguí cada postulación.'),
+                      ][here]} />
+          )}
         </main>
       </div>
     </div>
   );
 }
+
+/**
+ * The title of every page: which step you are on, in big type, over a path that draws
+ * itself each time you arrive — the same line as the logo.
+ */
+function PageHeader({ eyebrow, title, sub, stepKey, onTour }: { eyebrow: string; title: string; sub: string; stepKey: string; onTour: () => void }) {
+  const lang = useUILang();
+  const t = useT();
+  return (
+    <header className="no-print relative overflow-hidden px-6 pb-6 pt-8 md:px-10 md:pt-10">
+      <svg key={stepKey} aria-hidden viewBox="0 0 600 120" preserveAspectRatio="none"
+           className="pointer-events-none absolute -right-10 top-2 hidden h-28 w-[46%] opacity-60 md:block">
+        <path d="M0 100 C 140 100, 160 40, 300 40 S 470 0, 600 8" fill="none" stroke="var(--color-brand-200)" strokeWidth="2" strokeLinecap="round"
+              className="path-draw" style={{ ['--len' as string]: 700 }} />
+        <circle cx="600" cy="8" r="5" fill="var(--color-lime-400)" />
+      </svg>
+      <div className="relative flex flex-wrap items-end justify-between gap-4">
+        <div key={stepKey} className="page-up min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-600">{eyebrow}</p>
+          <h1 className="mt-1.5 text-3xl font-semibold text-forest-900 md:text-[2.6rem] md:leading-[1.1]">{title}</h1>
+          {sub && <p className="mt-2 max-w-2xl text-[15px] text-ink-500">{sub}</p>}
+        </div>
+        <div className="flex items-center gap-2">
+        <button onClick={onTour} title={t('Show me around', 'Mostrame todo')}
+                className="grid h-8 w-8 place-items-center rounded-full border border-line bg-surface text-sm font-semibold text-ink-500 shadow-sm transition hover:border-brand-300 hover:text-brand-700">?</button>
+        <div className="flex overflow-hidden rounded-full border border-line bg-surface text-xs shadow-sm">
+          {(['en', 'es'] as const).map((l) => (
+            <button key={l} onClick={() => setUILang(l)}
+                    className={`px-3 py-1.5 font-semibold transition ${lang === l ? 'bg-forest-900 text-lime-300' : 'text-ink-500 hover:bg-sunken'}`}>
+              {l.toUpperCase()}
+            </button>
+          ))}
+        </div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+/** "You are done here — this is what comes next", once per finished step, at the foot of the page. */
+function NextStep({ to, label, n, body }: { to: string; label: string; n: number; body: string }) {
+  const t = useT();
+  return (
+    <Link to={to} className="group mt-12 flex items-center gap-5 overflow-hidden rounded-3xl bg-forest-900 p-6 text-white shadow-xl shadow-forest-900/15 transition hover:-translate-y-0.5 hover:shadow-2xl">
+      <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-lime-400 font-display text-2xl font-semibold text-forest-950 transition group-hover:scale-105">{n}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-lime-300/80">{t('Next step', 'Siguiente paso')}</span>
+        <span className="mt-0.5 block font-display text-2xl font-semibold">{label}</span>
+        <span className="mt-0.5 block text-sm text-white/65">{body}</span>
+      </span>
+      <span className="text-3xl text-lime-400 transition group-hover:translate-x-1.5">→</span>
+    </Link>
+  );
+}
+
+/** On a phone the journey becomes a strip of four steps across the top. */
+function MobileBar({ states }: { states: ReturnType<typeof stepStates> }) {
+  const t = useT();
+  const { pathname } = useLocation();
+  const here = stepIndex(pathname);
+  return (
+    <div className="no-print sticky top-0 z-20 flex items-center gap-3 bg-forest-950 px-4 py-3 md:hidden">
+      <Link to="/"><Logo size={28} /></Link>
+      <nav className="flex flex-1 justify-around">
+        {STEPS.map((s, i) => (
+          <NavLink key={s.n} to={s.to} className="flex flex-col items-center gap-1">
+            <span className={`grid h-7 w-7 place-items-center rounded-full text-xs font-semibold ${
+              states[i]?.done ? 'bg-lime-400 text-forest-950' : i === here ? 'bg-forest-800 text-lime-300 ring-2 ring-lime-400' : 'bg-white/10 text-white/60'}`}>
+              {states[i]?.done ? '✓' : s.n}
+            </span>
+            <span className={`text-[10px] ${i === here ? 'text-white' : 'text-white/50'}`}>{s.label(t)}</span>
+          </NavLink>
+        ))}
+      </nav>
+    </div>
+  );
+}
+

@@ -1,4 +1,5 @@
 import { db } from './db.ts';
+import { inScope, readPrefs } from './scope.ts';
 
 export interface IncomingJob {
   source: string;
@@ -9,21 +10,35 @@ export interface IncomingJob {
   url?: string;
   posted_on?: string;
   description?: string;
+  /** When a source already knows where the job is, that beats parsing the location text. */
+  country?: string;
+  city?: string;
+  remote?: number;
 }
 
-/** The unique index does the deduping; we just count what actually landed. */
+/**
+ * The unique index does the deduping; we just count what actually landed. The same posting
+ * often arrives from two sources with different tracking links, so a second check matches on
+ * company + title + city before inserting.
+ */
 export function insertJobs(rows: IncomingJob[]): { inserted: number; skipped: number } {
   const stmt = db.prepare(
-    `INSERT OR IGNORE INTO job (source, external_id, company, title, location, url, posted_on, description)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR IGNORE INTO job (source, external_id, company, title, location, url, posted_on, description, country, city, remote)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
+  const twin = db.prepare('SELECT 1 FROM job WHERE lower(company) = lower(?) AND lower(title) = lower(?) AND (location = ? OR city = ?) LIMIT 1');
   let inserted = 0;
+  const prefs = readPrefs();
   for (const r of rows) {
     if (!r.company && !r.title) continue;
+    if (!inScope(r, prefs)) continue;
+    const company = r.company.trim();
+    const title = r.title.trim();
+    const location = (r.location ?? '').trim();
+    if (twin.get(company, title, location, (r.city ?? '').trim() || location)) continue;
     const info = stmt.run(
-      r.source, r.external_id ?? '', r.company.trim(), r.title.trim(),
-      (r.location ?? '').trim(), (r.url ?? '').trim(), (r.posted_on ?? '').trim(),
-      (r.description ?? '').trim(),
+      r.source, r.external_id ?? '', company, title, location, (r.url ?? '').trim(), (r.posted_on ?? '').trim(),
+      (r.description ?? '').trim(), (r.country ?? '').trim(), (r.city ?? '').trim(), r.remote ?? 0,
     );
     if (info.changes > 0) inserted++;
   }
@@ -58,7 +73,7 @@ export function parseDelimited(text: string, delimiter?: string): string[][] {
   return rows.filter((r) => r.some((f) => f.trim()));
 }
 
-const FIELD_ALIASES: Record<keyof IncomingJob, string[]> = {
+const FIELD_ALIASES: Record<Exclude<keyof IncomingJob, 'country' | 'city' | 'remote'>, string[]> = {
   source: [],
   external_id: ['job id', 'jobid', 'posting id', 'requisition id'],
   company: ['company name', 'company', 'employer', 'organisation', 'organization', 'empresa'],

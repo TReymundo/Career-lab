@@ -44,6 +44,8 @@ export interface Job {
   id: number; source: string; external_id: string; company: string; title: string;
   location: string; url: string; posted_on: string; description: string; track: string;
   category: string; tailored_at: string;
+  country: string; city: string; remote: number; level: string; lang: string;
+  relevance: number; fit: '' | 'great' | 'good' | 'stretch' | 'no'; fit_why: string; fit_gap: string;
   starred: number; dismissed: number; application_id: number | null; imported_at: string;
 }
 
@@ -90,7 +92,7 @@ export interface ParsedEntry {
 }
 
 export interface ParsedCV {
-  name: string; email: string; phone: string; linkedin: string; summary: string;
+  name: string; headline?: string; location?: string; email: string; phone: string; linkedin: string; summary: string;
   skills: string; languages: string; entries: ParsedEntry[]; unmatched: string[];
 }
 
@@ -103,8 +105,17 @@ export interface Store {
   document: Doc[];
   saved_search: SavedSearch[];
   answer: Answer[];
+  story: Story[];
+  story_answer: StoryAnswer[];
   setting: Record<string, string>;
 }
+
+/** What the "get to know you" interview learned. Private ones inform, but never appear in a document. */
+export interface Story {
+  id: number; kind: 'story' | 'fact' | 'value' | 'trait'; title: string; body: string; shows: string;
+  private: number; answer_id: number | null; created_at: string;
+}
+export interface StoryAnswer { id: number; question: string; theme: string; created_at: string }
 
 export const parseBullets = (raw: string): Bullet[] => {
   try {

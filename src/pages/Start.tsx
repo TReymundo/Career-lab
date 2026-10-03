@@ -1,539 +1,283 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Area, Badge, Button, Card, Field, Select } from '../components/ui.tsx';
-import { api, type BulletSuggestion, type FieldEdit, type FieldItem } from '../lib/api.ts';
+import { Badge, Button, Card, Field } from '../components/ui.tsx';
+import { api, type AiStatus, type FieldEdit, type FieldItem } from '../lib/api.ts';
 import { useT, useUILang } from '../lib/i18n.ts';
-import { buildCV } from '../lib/templates.ts';
-import { TRACKS, parseBullets, type Experience, type ParsedCV, type Store, type Track } from '../lib/types.ts';
+import CVStudio from '../components/CVStudio.tsx';
+import KeyBox, { useAiStatus } from '../components/KeyBox.tsx';
+import { buildCV, detectLang } from '../lib/templates.ts';
+import { bulletRows, hasDigit, runChecks, type Check } from '../lib/cvcheck.ts';
+import { parseBullets, type ParsedCV, type Store, type Track } from '../lib/types.ts';
+import { ContactQ, EducationQ, ExperienceQ, NameQ, NumberQ, SkillsQ, TargetQ, type QProps } from '../components/questions.tsx';
 import CVReveal from '../components/CVReveal.tsx';
 import { toast } from '../components/Toast.tsx';
 
 /**
- * One path, top to bottom. Each step does its own work inline and ticks itself off when you
- * save, so the next move is never a guess. Nothing here assumes a particular university,
- * country, or that you have any work experience at all.
+ * One question per screen.
+ *
+ * It opens on the only question that decides everything else — do you already have a CV? —
+ * then takes one of two paths that meet at the same review:
+ *
+ *   upload → what we found → only the questions the file could not answer → review
+ *   build  → name → contact → target → education → experience → skills    → review
+ *
+ * Where you are is saved, so leaving and coming back resumes on the same screen.
  */
 
-interface Ctx {
-  store: Store;
-  reload: () => Promise<void>;
-  done: (id: string) => void;
-  next: () => void;
-  t: (en: string, es: string) => string;
-  lang: 'en' | 'es';
-}
+type Path = 'upload' | 'build';
+interface Flow { path: Path | null; seq: string[]; at: number }
 
-interface Step {
-  id: string;
-  title: (t: Ctx['t']) => string;
-  help: (t: Ctx['t']) => string;
-  optional?: boolean;
-  auto?: (s: Store) => boolean;
-  render: (ctx: Ctx) => React.ReactNode;
-}
+const BUILD = ['name', 'contact', 'target', 'education', 'experience', 'skills'];
+const MAX_NUMBER_QUESTIONS = 5;
 
-interface Phase {
-  id: string;
-  title: (t: Ctx['t']) => string;
-  blurb: (t: Ctx['t']) => string;
-  steps: Step[];
-  /** Shown when every step in the phase is done: what you just earned, and where to go next. */
-  done?: (t: Ctx['t']) => { headline: string; body: string; cta?: string; to?: string };
-}
-
-const hasDigit = (s: string) => /\d/.test(s);
-const allBullets = (s: Store) => s.experience.flatMap((e) => parseBullets(e.bullets));
 const firstTrack = (s: Store): Track => {
   try { return (JSON.parse(s.setting['tracks'] || '[]') as Track[])[0] ?? 'other'; } catch { return 'other'; }
 };
 
-const PHASES: Phase[] = [
-  {
-    id: 'you',
-    title: (t) => t('Who you are', 'Quién sos'),
-    blurb: (t) => t('Two minutes. Everything else builds on this.', 'Dos minutos. Todo lo demás se construye sobre esto.'),
-    done: (t) => ({
-      headline: t('That’s you on file.', 'Listo, ya sos alguien en el sistema.'),
-      body: t('Every document from here on carries these details. Next: your CV.',
-              'Todos los documentos de acá en adelante llevan estos datos. Ahora: tu CV.'),
-    }),
-    steps: [
-      {
-        id: 'basics',
-        title: (t) => t('Your name and contact details', 'Tu nombre y datos de contacto'),
-        help: (t) => t(
-          'These go at the top of every document. A CV without a phone number gets filtered out before a human sees it.',
-          'Esto va arriba de todo en cada documento. Un CV sin teléfono se descarta antes de que lo vea una persona.'),
-        auto: (s) => Boolean(s.profile.name.trim() && s.profile.email.trim()),
-        render: (ctx) => <Basics {...ctx} />,
-      },
-      {
-        id: 'target',
-        title: (t) => t('What kind of work are you going for?', '¿Qué tipo de trabajo buscás?'),
-        help: (t) => t(
-          'Pick anything that fits — more than one is fine, and you can change it later. This decides how your CV gets framed.',
-          'Elegí lo que te sirva — podés marcar más de uno y cambiarlo después. Esto define cómo se enfoca tu CV.'),
-        auto: (s) => Boolean(s.setting['tracks']),
-        render: (ctx) => <Target {...ctx} />,
-      },
-    ],
-  },
-  {
-    id: 'cv',
-    title: (t) => t('Build your CV', 'Armá tu CV'),
-    blurb: (t) => t('Import one you already have, or make one from nothing. Both work.',
-                    'Importá uno que ya tengas, o armalo desde cero. Las dos cosas funcionan.'),
-    done: (t) => ({
-      headline: t('Your CV exists.', 'Tu CV ya existe.'),
-      body: t('You can open it, edit it and export it as a real file any time. Sharpening it with AI is next, and it is optional.',
-              'Podés abrirlo, editarlo y exportarlo como archivo cuando quieras. Lo próximo es afinarlo con IA, y es opcional.'),
-      cta: t('Open my CV', 'Abrir mi CV'),
-      to: '/profile',
-    }),
-    steps: [
-      {
-        id: 'source',
-        title: (t) => t('Do you already have a CV?', '¿Ya tenés un CV?'),
-        help: (t) => t(
-          'If you do, upload it and it fills everything in. If you do not, say so and the next steps build one.',
-          'Si tenés, subilo y se completa solo. Si no, decilo y los pasos siguientes lo arman.'),
-        auto: (s) => s.experience.length > 0 || s.setting['step:source'] === 'done',
-        render: (ctx) => <CVSource {...ctx} />,
-      },
-      {
-        id: 'education',
-        title: (t) => t('Your education', 'Tu formación'),
-        help: (t) => t(
-          'University, tertiary, high school, a bootcamp, or still studying — all of it counts and belongs here.',
-          'Universidad, terciario, secundario, un bootcamp, o si todavía estás cursando — todo cuenta y va acá.'),
-        auto: (s) => s.experience.some((e) => e.kind === 'education' && e.org.trim()),
-        render: (ctx) => <EducationStep {...ctx} />,
-      },
-      {
-        id: 'experience',
-        title: (t) => t('Your experience', 'Tu experiencia'),
-        help: (t) => t(
-          'Jobs and internships if you have them. If you have none at all, this step shows what else counts and helps you write it.',
-          'Trabajos y pasantías si tenés. Si no tenés nada, este paso te muestra qué más cuenta y te ayuda a escribirlo.'),
-        auto: (s) => s.experience.some((e) => e.kind !== 'education' && parseBullets(e.bullets).length > 0),
-        render: (ctx) => <ExperienceStep {...ctx} />,
-      },
-      {
-        id: 'extras',
-        title: (t) => t('The things recruiters look for and rarely find', 'Lo que los reclutadores buscan y casi nunca encuentran'),
-        help: (t) => t(
-          'Skills, grades, coursework, projects, activities, LinkedIn. Each one is a box below — fill what is true and leave the rest.',
-          'Habilidades, notas, materias, proyectos, actividades, LinkedIn. Cada una es un campo acá abajo — completá lo que sea cierto y dejá el resto.'),
-        auto: (s) => Boolean(s.profile.skills.trim()) && s.setting['step:extras'] === 'done',
-        render: (ctx) => <ExtrasStep {...ctx} />,
-      },
-      {
-        id: 'numbers',
-        title: (t) => t('Put a number in each line', 'Poné un número en cada línea'),
-        help: (t) => t(
-          'The single biggest improvement you can make. "Helped with events" is invisible; "ran 4 events for 300 people" is a fact.',
-          'La mejora más grande que podés hacer. "Ayudé con eventos" es invisible; "organicé 4 eventos para 300 personas" es un hecho.'),
-        auto: (s) => {
-          const bs = allBullets(s);
-          return bs.length >= 2 && bs.filter((b) => hasDigit(b.text)).length / bs.length >= 0.6;
-        },
-        render: (ctx) => <NumbersStep {...ctx} />,
-      },
-    ],
-  },
-  {
-    id: 'ai',
-    title: (t) => t('Sharpen it with AI', 'Afinalo con IA'),
-    blurb: (t) => t('Optional, and it needs your own Google API key. Skip the phase if you would rather not.',
-                    'Opcional, y necesita tu propia clave de Google. Saltealo si preferís.'),
-    done: (t) => ({
-      headline: t('Sharpened.', 'Afinado.'),
-      body: t('Setup is finished. The next part — finding jobs — has its own screen, and the AI can plan it for you.',
-              'La configuración terminó. La parte que sigue — encontrar avisos — tiene su propia pantalla, y la IA puede planificarla.'),
-      cta: t('Find jobs →', 'Buscar avisos →'),
-      to: '/jobs',
-    }),
-    steps: [
-      {
-        id: 'key',
-        title: (t) => t('Connect your Google AI key', 'Conectá tu clave de Google AI'),
-        help: (t) => t(
-          'Free to create. Paste it here and the next steps light up. Nothing is sent anywhere until you press a button.',
-          'Se crea gratis. Pegala acá y se habilitan los pasos siguientes. No se envía nada hasta que apretás un botón.'),
-        optional: true,
-        render: (ctx) => <AIKey {...ctx} />,
-      },
-      {
-        id: 'rewrite',
-        title: (t) => t('Rewrite your bullets', 'Reescribí tus líneas'),
-        help: (t) => t(
-          'The AI sharpens what you wrote. It may not invent numbers — where one is missing it asks you for it instead.',
-          'La IA afina lo que escribiste. No puede inventar números: donde falta uno, te lo pregunta.'),
-        optional: true,
-        render: (ctx) => <AIBullets {...ctx} />,
-      },
-      {
-        id: 'profile-para',
-        title: (t) => t('Profile paragraph, review, and a final clean-up', 'Perfil, revisión y limpieza final'),
-        help: (t) => t(
-          'A paragraph for the top of the CV, an honest review, then a pass that fixes typos and weak wording — each change shown before it is applied.',
-          'Un párrafo para el encabezado, una revisión honesta, y una pasada que corrige errores de tipeo y frases flojas — cada cambio se muestra antes de aplicarse.'),
-        optional: true,
-        render: (ctx) => <AIReview {...ctx} />,
-      },
-    ],
-  },
-];
+/** After an upload: the questions whose answers the file did not contain, and nothing else. */
+function gapsFor(s: Store): string[] {
+  const p = s.profile;
+  const done = s.experience.filter((e) => e.kind !== 'education');
+  const out: string[] = [];
+  if (!p.name.trim()) out.push('name');
+  if (!p.email.trim() || !p.phone.trim() || !p.location.trim()) out.push('contact');
+  if (!p.headline.trim()) out.push('target');
+  if (!s.experience.some((e) => e.kind === 'education')) out.push('education');
+  if (!done.some((e) => parseBullets(e.bullets).length)) out.push('experience');
+  out.push(...numberGaps(s).slice(0, MAX_NUMBER_QUESTIONS));
+  if (!p.skills.trim() || !p.languages.trim()) out.push('skills');
+  return out;
+}
 
-const ALL_STEPS = PHASES.flatMap((p) => p.steps);
+const numberGaps = (s: Store) => {
+  const work = new Set(s.experience.filter((e) => e.kind !== 'education').map((e) => e.id));
+  return bulletRows(s).filter((r) => work.has(r.expId) && !hasDigit(r.text)).map((r) => `num:${r.expId}:${r.index}`);
+};
+
+function initialFlow(store: Store): Flow {
+  // "/cv?fresh=1" shows the first question without touching saved progress (until you act).
+  if (new URLSearchParams(window.location.search).has('fresh')) return { path: null, seq: ['choose'], at: 0 };
+  try {
+    const saved = JSON.parse(store.setting['flow'] || 'null') as Flow | null;
+    if (saved && Array.isArray(saved.seq) && saved.seq.length) return { ...saved, at: Math.min(saved.at, saved.seq.length - 1) };
+  } catch { /* fall through */ }
+  // Someone who already has a CV from the old setup lands on the review, not on question one.
+  const started = Boolean(store.profile.name.trim()) || store.experience.length > 0;
+  return started ? { path: 'build', seq: ['choose', 'review'], at: 1 } : { path: null, seq: ['choose'], at: 0 };
+}
 
 export default function Start({ store, reload }: { store: Store; reload: () => Promise<void> }) {
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [reveal, setReveal] = useState(false);
   const t = useT();
-  const lang = useUILang();
+  const [flow, setFlowState] = useState<Flow>(() => initialFlow(store));
+  const [dir, setDir] = useState<'fwd' | 'back'>('fwd');
+  const [parsed, setParsed] = useState<{ cv: ParsedCV; via: 'ai' | 'rules' } | null>(null);
+  // Fixes opened from the review run as a short queue, then drop you back on the review.
+  const [fixQueue, setFixQueue] = useState<string[]>([]);
+  const [reveal, setReveal] = useState(false);
+  const top = useRef<HTMLDivElement>(null);
 
-  const isDone = (s: Step) => store.setting[`step:${s.id}`] === 'done' || Boolean(s.auto?.(store));
-  const state = useMemo(() => ALL_STEPS.map((s) => ({ step: s, done: isDone(s) })), [store]);
-
-  const firstOpen = state.find((s) => !s.done)?.step.id ?? null;
-  const active = openId ?? firstOpen;
-  const doneCount = state.filter((s) => s.done).length;
-
-  const done = (id: string) => { void api.setSetting(`step:${id}`, 'done').then(reload); };
-
-  /**
-   * Finishing the CV is the one genuine milestone in setup, so it is a button you press
-   * rather than something that fires at you. Pressing it saves the CV where the rest of the
-   * app can find it, then opens the reveal.
-   */
-  const cvPhase = PHASES.find((p) => p.id === 'cv');
-  const cvDone = Boolean(cvPhase?.steps.every((s) => store.setting[`step:${s.id}`] === 'done' || s.auto?.(store)));
-  const [finishing, setFinishing] = useState(false);
-
-  const finish = async () => {
-    setFinishing(true);
-    const track = firstTrack(store);
-    const markdown = buildCV(store.profile, store.experience, { track, lang, template: 'ats' });
-
-    // Keep it out of the way if an identical version is already filed.
-    const already = store.document.some((d) => d.kind === 'cv' && d.body.trim() === markdown.trim());
-    if (!already) {
-      await api.create('document', {
-        application_id: null,
-        kind: 'cv',
-        title: `${t('CV', 'CV')} (${lang.toUpperCase()}) — ${t('from setup', 'desde la configuración')} — ${new Date().toLocaleDateString('en-GB')}`,
-        body: markdown,
-      });
-    }
-    if (store.setting['celebrated:cv'] !== 'done') {
-      await api.setSetting('celebrated:cv', 'done');
-      toast(
-        t('Jobs unlocked', 'Avisos desbloqueado'),
-        t('A new section opened in the sidebar. That is where the AI looks for openings that match your CV.',
-          'Se abrió una sección nueva en el menú. Ahí la IA busca avisos que coincidan con tu CV.'),
-      );
-    }
-    await reload();
-    setFinishing(false);
-    setReveal(true);
+  const setFlow = (f: Flow, d: 'fwd' | 'back' = 'fwd') => {
+    setDir(d);
+    setFlowState(f);
+    void api.setSetting('flow', JSON.stringify(f));
+    top.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   };
 
+  const screen = fixQueue[0] ?? flow.seq[flow.at];
   const next = () => {
-    const i = ALL_STEPS.findIndex((s) => s.id === active);
-    setOpenId(ALL_STEPS[i + 1]?.id ?? null);
+    if (fixQueue.length) { setDir('fwd'); setFixQueue((q) => q.slice(1)); return; }
+    setFlow({ ...flow, at: Math.min(flow.at + 1, flow.seq.length - 1) });
   };
-  const ctx = { store, reload, done, next, t, lang };
+  const back = () => {
+    if (fixQueue.length) { setDir('back'); setFixQueue([]); return; }
+    setFlow({ ...flow, at: Math.max(flow.at - 1, 0) }, 'back');
+  };
 
-  const activePhase = PHASES.find((p) => p.steps.some((st) => st.id === active))?.id ?? null;
+  const choose = (path: Path) => setFlow(path === 'build'
+    ? { path, seq: ['choose', ...BUILD, 'review'], at: 1 }
+    : { path, seq: ['choose', 'upload', 'found'], at: 1 });
+
+  const confirmUpload = async (replace: boolean) => {
+    if (!parsed) return;
+    await api.applyCV(parsed.cv, replace);
+    const fresh = await api.all();
+    await reload();
+    setParsed(null);
+    const gaps = gapsFor(fresh);
+    setFlow({ path: 'upload', seq: ['choose', 'upload', 'found', ...gaps, 'review'], at: 3 });
+    if (!gaps.length) toast(t('Nothing missing', 'No falta nada'), t('Your CV had everything. Straight to the review.', 'Tu CV tenía todo. Directo a la revisión.'));
+  };
+
+  const fix = (c: Check) => {
+    if (c.fix === 'numbers') setFixQueue(numberGaps(store).slice(0, MAX_NUMBER_QUESTIONS));
+    else if (c.fix && c.fix !== 'polish' && c.fix !== 'profile') setFixQueue([c.fix]);
+    setDir('fwd');
+  };
+
+  // Progress counts the questions only, not the opening choice, the upload or the review.
+  const questions = flow.seq.filter((s) => !['choose', 'upload', 'found', 'review'].includes(s));
+  const total = Math.max(questions.length, 1);
+  const position = Math.max(questions.indexOf(screen), 0);
+  const showRail = screen !== 'choose' && screen !== 'review' && !fixQueue.length;
+
+  const q: QProps = { store, reload, onDone: next };
+  const body = (() => {
+    if (screen === 'choose') return <Choose onPick={choose} />;
+    if (screen === 'upload' || (screen === 'found' && !parsed)) {
+      return <Upload onParsed={(cv, via) => { setParsed({ cv, via }); setFlow({ ...flow, seq: ['choose', 'upload', 'found'], at: 2 }); }} />;
+    }
+    if (screen === 'found' && parsed) return <Found parsed={parsed.cv} via={parsed.via} store={store} onConfirm={confirmUpload} onRetry={back} />;
+    if (screen === 'name') return <NameQ {...q} />;
+    if (screen === 'contact') return <ContactQ {...q} />;
+    if (screen === 'target') return <TargetQ {...q} />;
+    if (screen === 'education') return <EducationQ {...q} />;
+    if (screen === 'experience') return <ExperienceQ {...q} />;
+    if (screen === 'skills') return <SkillsQ {...q} />;
+    if (screen.startsWith('num:')) {
+      const [, id, i] = screen.split(':');
+      return <NumberQ {...q} expId={Number(id)} index={Number(i)} />;
+    }
+    return <CVStudio store={store} reload={reload} onFix={fix} onRestart={() => setFlow({ path: null, seq: ['choose'], at: 0 }, 'back')} />;
+  })();
 
   return (
-    <div className="flex flex-col-reverse gap-6 lg:flex-row lg:items-start">
+    <div ref={top} className={`mx-auto scroll-mt-24 ${screen === 'review' ? 'max-w-7xl' : 'max-w-2xl'}`}>
       {reveal && <CVReveal store={store} onClose={() => setReveal(false)} />}
 
-      <div className="min-w-0 flex-1 space-y-6">
-        {PHASES.map((phase, pi) => {
-          const steps = state.filter((s) => phase.steps.some((p) => p.id === s.step.id));
-          const phaseDone = steps.every((s) => s.done);
-          const isHere = activePhase === phase.id;
-
-          return (
-            <section
-              key={phase.id}
-              id={`phase-${phase.id}`}
-              /* Everything that is not where you are recedes, so the eye has one place to go. */
-              className={`rounded-2xl transition-all duration-300 ${
-                isHere ? 'bg-surface/70 p-3 ring-1 ring-brand-200 sm:p-4'
-                       : activePhase ? 'p-3 opacity-55 sm:p-4 hover:opacity-90' : 'p-3 sm:p-4'}`}
-            >
-              <div className="mb-2 flex flex-wrap items-baseline gap-3">
-                <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-semibold transition ${
-                  phaseDone ? 'bg-brand-500 text-white' : isHere ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-300' : 'bg-sunken text-ink-500'}`}>
-                  {phaseDone ? '✓' : pi + 1}
-                </span>
-                <h2 className={`text-sm font-semibold uppercase tracking-wider transition ${
-                  isHere ? 'text-ink-900' : phaseDone ? 'text-ink-400' : 'text-ink-700'}`}>
-                  {phase.title(t)}
-                </h2>
-                <p className="text-xs text-ink-500">{phase.blurb(t)}</p>
+      {screen !== 'choose' && screen !== 'review' && (
+        <div className="mb-8 flex items-center gap-4">
+          <button onClick={back} className="rounded-lg px-2 py-1 text-sm text-ink-500 transition hover:bg-sunken hover:text-ink-900">
+            ← {fixQueue.length ? t('Back to review', 'Volver a la revisión') : t('Back', 'Atrás')}
+          </button>
+          {showRail && (
+            <div className="flex flex-1 items-center gap-3">
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-sunken">
+                <div className="h-full rounded-full bg-brand-500 transition-all duration-500 ease-out" style={{ width: `${(position / total) * 100}%` }} />
               </div>
-
-              <div className="ml-3 space-y-2 border-l border-line pl-5">
-                {steps.map(({ step, done: stepDone }) => {
-                  const isOpen = active === step.id;
-                  return (
-                    <Card
-                      key={step.id}
-                      className={`overflow-hidden transition-all duration-200 ${
-                        isOpen
-                          ? 'border-brand-400 shadow-[0_10px_30px_-18px_rgb(16_35_26/.55)] ring-2 ring-brand-100'
-                          : 'hover:border-line-strong'}`}
-                    >
-                      <button onClick={() => setOpenId(isOpen ? '' : step.id)}
-                              className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-brand-50">
-                        <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] transition ${
-                          stepDone ? 'bg-brand-500 text-white'
-                                   : isOpen ? 'border-2 border-brand-400 bg-surface' : 'border border-line-strong bg-surface text-ink-400'}`}>
-                          {stepDone ? '✓' : ''}
-                        </span>
-                        <span className={`min-w-0 flex-1 text-sm transition ${
-                          stepDone ? 'font-medium text-ink-400 line-through decoration-brand-400'
-                                   : isOpen ? 'font-semibold text-ink-900' : 'font-medium text-ink-700'}`}>
-                          {step.title(t)}
-                        </span>
-                        {step.optional && <Badge tone="slate">{t('optional', 'opcional')}</Badge>}
-                        <span className="text-ink-400">{isOpen ? '▾' : '▸'}</span>
-                      </button>
-
-                      {isOpen && (
-                        <div className="animate-fade space-y-4 border-t border-line px-4 py-4">
-                          <p className="text-sm leading-relaxed text-ink-700">{step.help(t)}</p>
-                          {step.render(ctx)}
-                          {!stepDone && (
-                            <button onClick={() => { done(step.id); next(); }} className="text-xs text-ink-400 underline hover:text-ink-700">
-                              {t('Skip this step', 'Saltear este paso')}
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </Card>
-                  );
-                })}
-                {phaseDone && phase.done && <PhaseDone {...phase.done(t)} />}
-              </div>
-            </section>
-          );
-        })}
-
-        {/* The end of the road: one button, and it is the point of the whole screen. */}
-        <Card className={`p-5 transition-all duration-300 ${cvDone ? 'border-brand-300 bg-brand-50/60' : ''}`}>
-          {cvDone ? (
-            <div className="flex flex-wrap items-center gap-4">
-              <div className="min-w-0 flex-1">
-                <p className="text-base font-semibold text-ink-900">
-                  {t('Your CV is ready to be made.', 'Tu CV está listo para armarse.')}
-                </p>
-                <p className="mt-0.5 text-sm text-ink-700">
-                  {t('This saves it, shows you the finished page, and opens the job search.',
-                     'Esto lo guarda, te muestra la página terminada, y abre la búsqueda de avisos.')}
-                </p>
-              </div>
-              <Button variant="primary" className="px-6 py-3 text-base" disabled={finishing} onClick={finish}>
-                {finishing ? t('Making it…', 'Armándolo…') : t('Finish and create my CV', 'Terminar y crear mi CV')}
-              </Button>
-            </div>
-          ) : (
-            <div className="flex flex-wrap items-center gap-4">
-              <div className="min-w-0 flex-1">
-                <p className="text-base font-semibold text-ink-700">
-                  {t('Finish and create my CV', 'Terminar y crear mi CV')}
-                </p>
-                <p className="mt-0.5 text-sm text-ink-500">
-                  {t('Complete the steps above and this lights up. It makes the CV, shows it to you, and unlocks the job search.',
-                     'Completá los pasos de arriba y esto se enciende. Arma el CV, te lo muestra, y desbloquea la búsqueda de avisos.')}
-                </p>
-              </div>
-              <Button variant="primary" className="px-6 py-3 text-base" disabled>
-                {t('Finish and create my CV', 'Terminar y crear mi CV')}
-              </Button>
+              <span className="shrink-0 text-xs tabular-nums text-ink-400">
+                {screen === 'upload' || screen === 'found' ? t('Reading your CV', 'Leyendo tu CV') : `${position + 1} / ${total}`}
+              </span>
             </div>
           )}
-        </Card>
+        </div>
+      )}
+
+      <div key={screen} className={dir === 'fwd' ? 'animate-screen-fwd' : 'animate-screen-back'}>
+        {body}
       </div>
-
-      {/* Progress rail: where you are, at a glance, without scrolling back up. */}
-      <aside className="lg:sticky lg:top-24 lg:w-56 lg:shrink-0">
-        <Card className="p-4">
-          <div className="flex items-baseline gap-2">
-            <p className="text-2xl font-semibold tabular-nums text-ink-900">{doneCount}</p>
-            <p className="text-sm text-ink-400">/ {ALL_STEPS.length}</p>
-          </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-sunken">
-            <div className="h-full rounded-full bg-brand-500 transition-all duration-500"
-                 style={{ width: `${(doneCount / ALL_STEPS.length) * 100}%` }} />
-          </div>
-
-          <ol className="mt-4 space-y-3">
-            {PHASES.map((phase, pi) => {
-              const steps = state.filter((s) => phase.steps.some((p) => p.id === s.step.id));
-              const phaseDone = steps.every((s) => s.done);
-              const isHere = activePhase === phase.id;
-              return (
-                <li key={phase.id}>
-                  <button
-                    onClick={() => setOpenId(steps.find((s) => !s.done)?.step.id ?? steps[0]?.step.id ?? null)}
-                    className="flex w-full items-start gap-2 text-left"
-                  >
-                    <span className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] font-semibold transition ${
-                      phaseDone ? 'bg-brand-500 text-white'
-                                : isHere ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-300' : 'bg-sunken text-ink-400'}`}>
-                      {phaseDone ? '✓' : pi + 1}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className={`block text-xs transition ${isHere ? 'font-semibold text-ink-900' : 'text-ink-500'}`}>
-                        {phase.title(t)}
-                      </span>
-                      <span className="block text-[11px] tabular-nums text-ink-400">
-                        {steps.filter((s) => s.done).length}/{steps.length}
-                      </span>
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ol>
-
-          {cvDone && (
-            <Button className="mt-4 w-full" onClick={() => setReveal(true)}>{t('See my CV', 'Ver mi CV')}</Button>
-          )}
-
-          <p className="mt-4 border-t border-line pt-3 text-[11px] leading-relaxed text-ink-400">
-            {t('This screen is only you and your CV. Jobs, applying and tracking have their own screens.',
-               'Esta pantalla es sólo vos y tu CV. Avisos, postulaciones y seguimiento tienen sus propias pantallas.')}
-          </p>
-        </Card>
-      </aside>
     </div>
   );
 }
 
-/** The "great, that's done — here is what it bought you" moment at the end of each phase. */
-function PhaseDone({ headline, body, cta, to }: { headline: string; body: string; cta?: string; to?: string }) {
-  return (
-    <div className="animate-rise mt-1 flex flex-wrap items-center gap-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3">
-      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand-500 text-sm text-white">✓</span>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-brand-900">{headline}</p>
-        <p className="text-xs text-ink-700">{body}</p>
-      </div>
-      {cta && to && <Link to={to}><Button variant="primary">{cta}</Button></Link>}
-    </div>
-  );
-}
+/* ---------------------------------------------------------------- the first question */
 
-function SaveBar({ label, disabled, onSave, extra }: {
-  label: string; disabled?: boolean; onSave: () => Promise<void> | void; extra?: React.ReactNode;
-}) {
-  const [busy, setBusy] = useState(false);
+function Choose({ onPick }: { onPick: (p: Path) => void }) {
   const t = useT();
   return (
-    <div className="flex flex-wrap items-center gap-2 pt-1">
-      <Button variant="primary" disabled={disabled || busy} onClick={async () => { setBusy(true); await onSave(); setBusy(false); }}>
-        {busy ? t('Saving…', 'Guardando…') : label}
-      </Button>
-      {extra}
-    </div>
-  );
-}
-
-function Steps({ points, to, cta }: { points: string[]; to?: string; cta?: string }) {
-  return (
-    <div className="space-y-3">
-      <ul className="space-y-1.5 text-sm text-ink-700">
-        {points.map((p, i) => <li key={i} className="flex gap-2"><span className="text-brand-500">→</span><span>{p}</span></li>)}
-      </ul>
-      {to && <Link to={to}><Button variant="primary">{cta}</Button></Link>}
-    </div>
-  );
-}
-
-function Basics({ store, reload, done, next, t }: Ctx) {
-  const [d, setD] = useState(store.profile);
-  const set = (p: Partial<typeof d>) => setD((x) => ({ ...x, ...p }));
-
-  return (
-    <div className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Field label={t('Full name', 'Nombre completo')} value={d.name} onChange={(e) => set({ name: e.target.value })} placeholder={t('Your name', 'Tu nombre')} />
-        <Field label={t('Email', 'Email')} value={d.email} onChange={(e) => set({ email: e.target.value })} placeholder="you@email.com" />
-        <Field label={t('Phone', 'Teléfono')} value={d.phone} onChange={(e) => set({ phone: e.target.value })} placeholder="+54 …" />
-        <Field label={t('City, country', 'Ciudad, país')} value={d.location} onChange={(e) => set({ location: e.target.value })} placeholder={t('City, Country', 'Ciudad, País')} />
-        <Field label={t('LinkedIn (optional)', 'LinkedIn (opcional)')} value={d.linkedin} onChange={(e) => set({ linkedin: e.target.value })} placeholder="linkedin.com/in/…" />
-        <Field label={t('One line about you', 'Una línea sobre vos')} value={d.headline} onChange={(e) => set({ headline: e.target.value })}
-               placeholder={t('Final-year business student', 'Estudiante de último año de negocios')} />
+    <div className="pt-2 sm:pt-6">
+      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-brand-600">{t('Let’s start with your CV', 'Empecemos por tu CV')}</p>
+      <h2 className="mt-2 text-4xl font-semibold text-forest-900 sm:text-5xl">
+        {t('Do you already ', '¿Ya tenés ')}<span className="italic text-brand-600">{t('have one?', 'uno?')}</span>
+      </h2>
+      <div className="stagger mt-10 grid gap-5 sm:grid-cols-2">
+        <button onClick={() => onPick('upload')}
+                className="choice group relative overflow-hidden rounded-3xl border border-line bg-surface p-7 text-left transition duration-300 hover:-translate-y-1 hover:border-brand-300 hover:shadow-2xl hover:shadow-forest-900/10">
+          <UploadArt />
+          <p className="mt-6 font-display text-2xl font-semibold text-forest-900">{t('Yes — upload it', 'Sí — subirlo')}</p>
+          <p className="mt-1.5 text-sm leading-relaxed text-ink-500">{t('Word or PDF. Everything gets pulled out, and you only answer what’s missing.', 'Word o PDF. Se extrae todo, y sólo respondés lo que falta.')}</p>
+          <span className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-brand-700">{t('Upload my CV', 'Subir mi CV')}<span className="transition group-hover:translate-x-1">→</span></span>
+        </button>
+        <button onClick={() => onPick('build')}
+                className="choice group relative overflow-hidden rounded-3xl bg-forest-900 p-7 text-left text-white transition duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-forest-900/25">
+          <div aria-hidden className="float-slow pointer-events-none absolute -right-10 -top-10 h-48 w-48 rounded-full bg-lime-400/20 blur-3xl" />
+          <ChatArt />
+          <p className="relative mt-6 font-display text-2xl font-semibold">{t('No — build one with me', 'No — armémoslo juntos')}</p>
+          <p className="relative mt-1.5 text-sm leading-relaxed text-white/65">{t('One question at a time, about ten minutes. Never had a job? That’s fine.', 'Una pregunta a la vez, unos diez minutos. ¿Nunca trabajaste? No pasa nada.')}</p>
+          <span className="relative mt-5 inline-flex items-center gap-2 text-sm font-semibold text-lime-300">{t('Start the questions', 'Empezar las preguntas')}<span className="transition group-hover:translate-x-1">→</span></span>
+        </button>
       </div>
-      <SaveBar
-        label={t('Save and continue', 'Guardar y continuar')}
-        disabled={!d.name.trim() || !d.email.trim()}
-        onSave={async () => {
-          await api.saveProfile(d as unknown as Record<string, string>);
-          await reload();
-          done('basics');
-          next();
-        }}
-      />
+      <p className="mt-6 text-sm text-ink-400">
+        {t('Either way it stays on this computer, and you can switch later.', 'De cualquier forma queda en esta computadora, y podés cambiar después.')}
+      </p>
     </div>
   );
 }
 
-function Target({ store, reload, done, next, t }: Ctx) {
-  const [picked, setPicked] = useState<Track[]>(() => {
-    try { return JSON.parse(store.setting['tracks'] || '[]'); } catch { return []; }
-  });
-  const lang = useUILang();
-  const LABELS: Record<Track, string> = {
-    finance: t('Finance, markets & banking', 'Finanzas, mercados y banca'),
-    ib: t('Investment banking / M&A', 'Banca de inversión / M&A'),
-    consulting: t('Consulting & strategy', 'Consultoría y estrategia'),
-    data: t('Data & analytics', 'Datos y analítica'),
-    tech: t('Software & engineering', 'Software e ingeniería'),
-    product: t('Product, marketing & operations', 'Producto, marketing y operaciones'),
-    other: t('Other', 'Otro'),
-  };
-  void lang;
-
+/** A page with lines that write themselves, and a scan line that sweeps over it on hover. */
+function UploadArt() {
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap gap-2">
-        {TRACKS.map((tr) => (
-          <button key={tr.id} onClick={() => setPicked((p) => (p.includes(tr.id) ? p.filter((x) => x !== tr.id) : [...p, tr.id]))}
-                  className={`rounded-lg border px-3 py-2 text-sm transition ${
-                    picked.includes(tr.id) ? 'border-brand-400 bg-brand-50 text-brand-700' : 'border-line bg-surface text-ink-700 hover:bg-sunken'}`}>
-            {LABELS[tr.id]}
-          </button>
+    <div aria-hidden className="relative h-32">
+      <div className="absolute left-2 top-3 h-28 w-24 rotate-[-7deg] rounded-lg bg-sunken ring-1 ring-line transition duration-500 group-hover:rotate-[-11deg]" />
+      <div className="scan-host absolute left-8 top-0 h-32 w-24 overflow-hidden rounded-lg bg-white p-3 shadow-lg ring-1 ring-line transition duration-500 group-hover:-translate-y-1.5">
+        <div className="hero-line h-2 w-14 rounded bg-forest-900" style={{ animationDelay: '0s' }} />
+        <div className="mt-1.5 hero-line h-1.5 w-16 rounded bg-brand-300" style={{ animationDelay: '.2s' }} />
+        {[0, 1, 2, 3, 4].map((i) => <div key={i} className="mt-2 hero-line h-1 rounded bg-line-strong" style={{ width: `${55 + ((i * 13) % 35)}%`, animationDelay: `${0.4 + i * 0.15}s` }} />)}
+        <span className="scan-line" />
+      </div>
+      <span className="absolute left-28 top-16 grid h-11 w-11 place-items-center rounded-full bg-lime-400 text-lg font-bold text-forest-950 shadow-lg transition duration-500 group-hover:-translate-y-2">↑</span>
+    </div>
+  );
+}
+
+/** A question bubble, a typing indicator, and an answer — the build-with-me chat in miniature. */
+function ChatArt() {
+  const t = useT();
+  return (
+    <div aria-hidden className="relative h-32 space-y-2">
+      <div className="chat-1 w-fit rounded-2xl rounded-tl-md bg-white/10 px-3.5 py-2 text-xs text-white/85">{t('What have you studied?', '¿Qué estudiaste?')}</div>
+      <div className="chat-2 ml-auto w-fit rounded-2xl rounded-tr-md bg-lime-400 px-3.5 py-2 text-xs font-medium text-forest-950">{t('Business at ITBA 🎓', 'Negocios en el ITBA 🎓')}</div>
+      <div className="chat-3 flex w-fit items-center gap-1 rounded-2xl rounded-tl-md bg-white/10 px-3.5 py-2.5">
+        {[0, 1, 2].map((d) => <span key={d} className="h-1.5 w-1.5 animate-bounce rounded-full bg-white/70" style={{ animationDelay: `${d * 140}ms` }} />)}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- upload */
+
+/** While a file is read, the steps tick off one by one — so a wait feels like work being done. */
+function ReadingSteps() {
+  const t = useT();
+  const steps = [
+    t('Opening your file', 'Abriendo tu archivo'),
+    t('Finding your sections', 'Encontrando tus secciones'),
+    t('Pulling out every job, school and line', 'Sacando cada trabajo, estudio y línea'),
+    t('Checking against what recruiters look for', 'Comparando con lo que buscan los reclutadores'),
+  ];
+  const [at, setAt] = useState(0);
+  useEffect(() => { const id = setInterval(() => setAt((a) => Math.min(a + 1, steps.length - 1)), 1700); return () => clearInterval(id); }, [steps.length]);
+  return (
+    <div className="flex flex-col items-center gap-6 py-4">
+      <span className="scan-doc scale-150" aria-hidden />
+      <ul className="w-full max-w-xs space-y-2 text-left">
+        {steps.map((s, i) => (
+          <li key={s} className={`flex items-center gap-2.5 text-sm transition duration-500 ${i <= at ? 'opacity-100' : 'opacity-30'}`}>
+            <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] transition duration-500 ${i < at ? 'bg-brand-500 text-white' : i === at ? 'bg-lime-300 text-forest-900' : 'bg-sunken text-ink-400'}`}>
+              {i < at ? '✓' : i === at ? <span className="h-2 w-2 animate-ping rounded-full bg-forest-900" /> : ''}
+            </span>
+            <span className={i === at ? 'font-medium text-ink-900' : 'text-ink-500'}>{s}</span>
+          </li>
         ))}
-      </div>
-      <SaveBar label={t('Save and continue', 'Guardar y continuar')} disabled={!picked.length} onSave={async () => {
-        await api.setSetting('tracks', JSON.stringify(picked));
-        await reload();
-        done('target');
-        next();
-      }} />
+      </ul>
     </div>
   );
 }
 
-function CVSource({ reload, done, next, t }: Ctx) {
-  const [text, setText] = useState('');
-  const [parsed, setParsed] = useState<ParsedCV | null>(null);
-  const [msg, setMsg] = useState('');
+function Upload({ onParsed }: { onParsed: (cv: ParsedCV, via: 'ai' | 'rules') => void }) {
+  const t = useT();
+  const [status, setStatus] = useAiStatus();
   const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [drag, setDrag] = useState(false);
+  const [text, setText] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
   const run = async (payload: { text?: string; base64?: string; filename?: string }) => {
     setBusy(true); setMsg('');
-    try { setParsed((await api.parseCV(payload)).parsed); }
-    catch (e) { setMsg(e instanceof Error ? e.message : String(e)); }
+    try {
+      const res = await api.parseCV(payload);
+      onParsed(res.parsed, res.via);
+    } catch (e) { setMsg(e instanceof Error ? e.message : String(e)); }
     setBusy(false);
   };
 
@@ -541,650 +285,148 @@ function CVSource({ reload, done, next, t }: Ctx) {
     if (!file) return;
     const bytes = new Uint8Array(await file.arrayBuffer());
     let bin = '';
-    for (const b of bytes) bin += String.fromCharCode(b);
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
     await run({ base64: btoa(bin), filename: file.name });
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap gap-2">
-        <Button variant="primary" onClick={() => fileRef.current?.click()}>{t('Upload my CV', 'Subir mi CV')}</Button>
-        <Button onClick={() => { done('source'); next(); }}>{t('I don’t have one — build it with me', 'No tengo — armémoslo juntos')}</Button>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-3xl font-semibold text-forest-900 sm:text-4xl">{t('Drop it ', 'Soltalo ')}<span className="italic text-brand-600">{t('here', 'acá')}</span></h2>
+        <p className="mt-2 text-sm text-ink-500">{t('Nothing is saved until you’ve checked what was found.', 'No se guarda nada hasta que revises lo que se encontró.')}</p>
       </div>
-      <input ref={fileRef} type="file" accept=".docx,.txt,.md" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
 
-      <p className="text-xs text-ink-500">
-        {t('Word (.docx), text and Markdown are read directly. For a PDF: open it, select all, copy, and paste below.',
-           'Word (.docx), texto y Markdown se leen directo. Para un PDF: abrilo, seleccioná todo, copiá y pegá abajo.')}
-      </p>
+      <button
+        onClick={() => !busy && fileRef.current?.click()}
+        onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+        onDragLeave={() => setDrag(false)}
+        onDrop={(e) => { e.preventDefault(); setDrag(false); void onFile(e.dataTransfer.files?.[0]); }}
+        disabled={busy}
+        className={`dropzone group relative flex w-full flex-col items-center justify-center gap-4 overflow-hidden rounded-3xl px-6 py-14 text-center transition duration-300 ${
+          drag ? 'dropzone-over scale-[1.015] bg-lime-300/20' : 'bg-surface hover:bg-brand-50/40'}`}
+      >
+        {busy ? <ReadingSteps /> : (
+          <>
+            <div className={`relative transition duration-500 ${drag ? '-translate-y-2 rotate-[-6deg] scale-110' : 'group-hover:-translate-y-1'}`}>
+              <span className="float-doc grid h-20 w-16 place-items-center rounded-xl bg-white shadow-xl ring-1 ring-line">
+                <span className="space-y-1.5">
+                  <span className="block h-1.5 w-8 rounded bg-forest-900" />
+                  <span className="block h-1 w-9 rounded bg-line-strong" />
+                  <span className="block h-1 w-7 rounded bg-line-strong" />
+                  <span className="block h-1 w-8 rounded bg-line-strong" />
+                </span>
+              </span>
+              <span className="absolute -bottom-2 -right-3 grid h-8 w-8 place-items-center rounded-full bg-lime-400 text-sm font-bold text-forest-950 shadow-md">↑</span>
+            </div>
+            <span className="font-display text-xl font-semibold text-forest-900">{drag ? t('Let go — I’ve got it', 'Soltalo — lo tengo') : t('Drop your CV, or click to choose', 'Soltá tu CV, o hacé clic para elegirlo')}</span>
+            <span className="text-xs text-ink-500">
+              {status?.configured ? t('Word (.docx) or PDF', 'Word (.docx) o PDF') : t('Word (.docx) — or PDF with a free Google key', 'Word (.docx) — o PDF con una clave gratis de Google')}
+            </span>
+          </>
+        )}
+      </button>
+      <input ref={fileRef} type="file" accept=".pdf,.docx,.txt,.md" className="hidden" onChange={(e) => void onFile(e.target.files?.[0])} />
+
+      {msg && <p className="animate-fade rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700">{msg}</p>}
+
+      <KeyBox status={status} onChange={setStatus}
+              reason={t('With a free Google AI key, it reads PDFs and gets far more right.', 'Con una clave gratis de Google AI, lee PDFs y acierta mucho más.')} />
 
       <details className="text-sm">
-        <summary className="cursor-pointer text-brand-700">{t('Paste the text instead', 'Pegar el texto en su lugar')}</summary>
-        <div className="mt-2 space-y-2">
-          <Area rows={6} value={text} onChange={(e) => setText(e.target.value)} className="font-mono text-xs"
-                placeholder={t('Paste your whole CV here.', 'Pegá todo tu CV acá.')} />
-          <Button disabled={busy || !text.trim()} onClick={() => run({ text })}>
-            {busy ? t('Reading…', 'Leyendo…') : t('Read it', 'Leerlo')}
-          </Button>
+        <summary className="cursor-pointer text-ink-500 hover:text-ink-900">{t('Or paste the text of your CV', 'O pegá el texto de tu CV')}</summary>
+        <div className="mt-3 space-y-2">
+          <textarea rows={7} value={text} onChange={(e) => setText(e.target.value)}
+                    className="w-full rounded-xl border border-line bg-surface px-3 py-2 font-mono text-xs outline-none focus:border-brand-400 focus:ring-4 focus:ring-brand-100"
+                    placeholder={t('Open your CV, select all, copy, paste here.', 'Abrí tu CV, seleccioná todo, copiá y pegá acá.')} />
+          <Button disabled={busy || !text.trim()} onClick={() => run({ text })}>{busy ? t('Reading…', 'Leyendo…') : t('Read it', 'Leerlo')}</Button>
         </div>
       </details>
+    </div>
+  );
+}
 
-      {msg && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">{msg}</p>}
+/* ---------------------------------------------------------------- what we found */
 
-      {parsed && (
-        <Card className="space-y-3 p-4">
-          <p className="text-sm font-medium text-ink-900">{t('Found this — check it before adding:', 'Encontré esto — revisalo antes de agregar:')}</p>
-          <div className="grid gap-1 text-sm sm:grid-cols-2">
-            {(['name', 'email', 'phone', 'linkedin'] as const).map((k) => (
-              <div key={k} className="flex gap-2">
-                <span className="w-16 shrink-0 text-xs uppercase tracking-wider text-ink-400">{k}</span>
-                <span className={parsed[k] ? 'text-ink-900' : 'text-ink-400'}>{parsed[k] || '—'}</span>
+function Found({ parsed, via, store, onConfirm, onRetry }: {
+  parsed: ParsedCV; via: 'ai' | 'rules'; store: Store; onConfirm: (replace: boolean) => Promise<void>; onRetry: () => void;
+}) {
+  const t = useT();
+  const [busy, setBusy] = useState(false);
+  const hasExisting = store.experience.length > 0;
+  const [replace, setReplace] = useState(false);
+
+  const edu = parsed.entries.filter((e) => e.kind === 'education');
+  const rest = parsed.entries.filter((e) => e.kind !== 'education');
+  const lines = rest.reduce((n, e) => n + e.bullets.length, 0);
+
+  const rows: { label: string; value: string; ok: boolean }[] = [
+    { label: t('Name', 'Nombre'), value: parsed.name, ok: Boolean(parsed.name) },
+    { label: t('Email', 'Email'), value: parsed.email, ok: Boolean(parsed.email) },
+    { label: t('Phone', 'Teléfono'), value: parsed.phone, ok: Boolean(parsed.phone) },
+    { label: t('City', 'Ciudad'), value: parsed.location ?? '', ok: Boolean(parsed.location) },
+    { label: t('Headline', 'Título'), value: parsed.headline ?? '', ok: Boolean(parsed.headline) },
+    { label: t('Education', 'Formación'), value: edu.map((e) => e.org).join(', '), ok: edu.length > 0 },
+    { label: t('Experience', 'Experiencia'), value: rest.length ? t(`${rest.length} ${rest.length === 1 ? 'entry' : 'entries'}, ${lines} ${lines === 1 ? 'line' : 'lines'}`,
+                               `${rest.length} ${rest.length === 1 ? 'entrada' : 'entradas'}, ${lines} ${lines === 1 ? 'línea' : 'líneas'}`) : '', ok: lines > 0 },
+    { label: t('Skills', 'Habilidades'), value: parsed.skills, ok: Boolean(parsed.skills) },
+    { label: t('Languages', 'Idiomas'), value: parsed.languages, ok: Boolean(parsed.languages) },
+  ];
+  const missing = rows.filter((r) => !r.ok).length;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-semibold tracking-tight text-ink-900 sm:text-3xl">{t('Here’s what I found', 'Esto es lo que encontré')}</h2>
+        <p className="mt-2 text-sm text-ink-500">
+          {missing === 0 ? t('Everything a CV needs is here.', 'Está todo lo que necesita un CV.')
+            : t(`${missing} thing${missing === 1 ? '' : 's'} missing — you’ll be asked just for ${missing === 1 ? 'that' : 'those'} next.`,
+                `Falta${missing === 1 ? '' : 'n'} ${missing} cosa${missing === 1 ? '' : 's'} — a continuación te pregunto sólo eso.`)}
+          {via === 'rules' && ' ' + t('(Read with simple rules — a Google key would catch more.)', '(Leído con reglas simples — con una clave de Google encuentra más.)')}
+        </p>
+      </div>
+
+      <Card className="stagger divide-y divide-line overflow-hidden">
+        {rows.map((r) => (
+          <div key={r.label} className="flex items-start gap-3 px-4 py-3 text-sm">
+            <span className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] ${r.ok ? 'bg-brand-500 text-white' : 'bg-amber-100 text-amber-700'}`}>
+              {r.ok ? '✓' : '!'}
+            </span>
+            <span className="w-28 shrink-0 text-ink-500">{r.label}</span>
+            <span className={`min-w-0 flex-1 break-words ${r.ok ? 'text-ink-900' : 'text-amber-700'}`}>{r.ok ? r.value : t('not found', 'no encontrado')}</span>
+          </div>
+        ))}
+      </Card>
+
+      {rest.length > 0 && (
+        <details className="text-sm">
+          <summary className="cursor-pointer text-ink-500 hover:text-ink-900">{t('See every line it read', 'Ver cada línea que leyó')}</summary>
+          <div className="mt-3 space-y-3">
+            {rest.map((e, i) => (
+              <div key={i} className="rounded-xl border border-line bg-surface px-4 py-3">
+                <p className="font-medium text-ink-900">{e.org}{e.title && <span className="font-normal text-ink-500"> — {e.title}</span>}</p>
+                <ul className="mt-1 space-y-0.5 text-ink-700">{e.bullets.map((b, j) => <li key={j}>• {b}</li>)}</ul>
               </div>
             ))}
           </div>
-          {parsed.entries.length > 0 ? (
-            <ul className="space-y-1 text-sm">
-              {parsed.entries.map((e, i) => (
-                <li key={i} className="flex items-center gap-2 rounded-lg border border-line px-3 py-1.5">
-                  <Badge tone={e.kind === 'work' ? 'sky' : e.kind === 'education' ? 'violet' : 'amber'}>{e.kind}</Badge>
-                  <span className="font-medium text-ink-900">{e.org || '—'}</span>
-                  <span className="truncate text-ink-500">{e.title}</span>
-                  <span className="ml-auto shrink-0 text-xs text-ink-400">{e.bullets.length} {t('lines', 'líneas')}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-amber-700">
-              {t('No entries recognised. It looks for headings like Experience / Education / Experiencia / Formación. You can skip this and type them in the next two steps instead.',
-                 'No reconocí entradas. Busca títulos como Experiencia / Formación / Experience / Education. Podés saltear esto y cargarlas en los dos pasos siguientes.')}
-            </p>
-          )}
-          <SaveBar label={t('Add these to my CV', 'Agregar esto a mi CV')} onSave={async () => {
-            await api.applyCV(parsed, false);
-            await reload();
-            setParsed(null);
-            done('source');
-            next();
-          }} />
-        </Card>
-      )}
-    </div>
-  );
-}
-
-function EducationStep({ store, reload, done, next, t }: Ctx) {
-  const LEVELS = [
-    { id: 'university', label: t('University / college', 'Universidad'), title: t('Degree in …', 'Licenciatura en …') },
-    { id: 'tertiary', label: t('Tertiary / technical', 'Terciario / técnico'), title: t('Technical qualification in …', 'Tecnicatura en …') },
-    { id: 'school', label: t('High school', 'Secundario'), title: t('Secondary school', 'Bachiller') },
-    { id: 'bootcamp', label: t('Bootcamp / certificate', 'Bootcamp / certificado'), title: t('Certificate in …', 'Certificado en …') },
-  ];
-  const [level, setLevel] = useState(LEVELS[0].id);
-  const [org, setOrg] = useState('');
-  const [title, setTitle] = useState('');
-  const [start, setStart] = useState('');
-  const [end, setEnd] = useState('');
-  const [studying, setStudying] = useState(true);
-
-  const existing = store.experience.filter((e) => e.kind === 'education');
-
-  return (
-    <div className="space-y-3">
-      {existing.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">{existing.map((e) => <Badge key={e.id} tone="violet">{e.org}</Badge>)}</div>
-      )}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Select label={t('Level', 'Nivel')} value={level} onChange={(e) => {
-          setLevel(e.target.value);
-          setTitle(LEVELS.find((l) => l.id === e.target.value)?.title ?? '');
-        }}>
-          {LEVELS.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
-        </Select>
-        <Field label={t('Institution name', 'Nombre de la institución')} value={org} onChange={(e) => setOrg(e.target.value)}
-               placeholder={t('Your school or university', 'Tu colegio o universidad')} />
-        <Field label={t('What you studied', 'Qué estudiaste')} value={title} onChange={(e) => setTitle(e.target.value)}
-               placeholder={t('e.g. Business administration', 'ej. Administración de empresas')} />
-        <div className="grid grid-cols-2 gap-3">
-          <Field label={t('From', 'Desde')} value={start} onChange={(e) => setStart(e.target.value)} placeholder="2022" />
-          <Field label={studying ? t('Expected finish', 'Fin estimado') : t('Finished', 'Terminado')} value={end}
-                 onChange={(e) => setEnd(e.target.value)} placeholder="2026" />
-        </div>
-      </div>
-      <label className="flex items-center gap-2 text-sm text-ink-700">
-        <input type="checkbox" checked={studying} onChange={(e) => setStudying(e.target.checked)} className="accent-brand-600" />
-        {t('I am still studying this', 'Todavía lo estoy cursando')}
-      </label>
-
-      <SaveBar
-        disabled={!org.trim()}
-        label={existing.length ? t('Add another', 'Agregar otro') : t('Save and continue', 'Guardar y continuar')}
-        onSave={async () => {
-          await api.create('experience', {
-            kind: 'education', org: org.trim(), title: title.trim(), start_date: start, end_date: end,
-            bullets: '[]', sort_order: store.experience.length,
-          });
-          setOrg(''); setStart(''); setEnd('');
-          await reload();
-          done('education');
-        }}
-        extra={<Button variant="ghost" onClick={next}>{t('Continue →', 'Continuar →')}</Button>}
-      />
-    </div>
-  );
-}
-
-function ExperienceStep({ store, reload, done, next, t }: Ctx) {
-  const EVIDENCE = [
-    t('A job of any kind — retail, hospitality, delivery, admin, a shift anywhere', 'Cualquier trabajo — comercio, gastronomía, delivery, administración, un turno en cualquier lado'),
-    t('A university or school project you can describe', 'Un trabajo práctico o proyecto de la facultad o del colegio'),
-    t('A club, student union, society or team role', 'Un club, centro de estudiantes, sociedad o equipo'),
-    t('Tutoring, teaching, coaching', 'Dar clases particulares, enseñar, entrenar'),
-    t('A family business you helped run', 'Un negocio familiar en el que ayudaste'),
-    t('Sport at any competitive level', 'Deporte en cualquier nivel competitivo'),
-    t('Volunteering', 'Voluntariado'),
-    t('Freelance work, a side project, a shop, a channel', 'Trabajo freelance, un proyecto propio, un emprendimiento, un canal'),
-  ];
-
-  const [org, setOrg] = useState('');
-  const [role, setRole] = useState('');
-  const [kind, setKind] = useState<Experience['kind']>('work');
-  const [targetId, setTargetId] = useState<number | ''>('');
-  const [verb, setVerb] = useState('');
-  const [what, setWhat] = useState('');
-  const [scale, setScale] = useState('');
-  const [result, setResult] = useState('');
-
-  const entries = store.experience.filter((e) => e.kind !== 'education');
-  const target = store.experience.find((e) => e.id === targetId) ?? entries[0];
-
-  const joiner = t('for', 'para');
-  const bullet = [verb.trim(), what.trim(), scale.trim() && `${joiner} ${scale.trim()}`, result.trim() && `— ${result.trim()}`]
-    .filter(Boolean).join(' ').replace(/\s+/g, ' ');
-
-  return (
-    <div className="space-y-4">
-      <details className="rounded-lg border border-line bg-sunken/60 px-3 py-2 text-sm">
-        <summary className="cursor-pointer font-medium text-ink-900">{t('I don’t have any work experience', 'No tengo experiencia laboral')}</summary>
-        <p className="mt-2 text-ink-700">
-          {t('Then you use one of these instead. All of them count, and all of them are normal on a first CV:',
-             'Entonces usás alguna de estas. Todas cuentan, y todas son normales en un primer CV:')}
-        </p>
-        <ul className="mt-2 grid gap-1 sm:grid-cols-2">
-          {EVIDENCE.map((e) => <li key={e} className="text-xs text-ink-700">• {e}</li>)}
-        </ul>
-      </details>
-
-      <div className="rounded-xl border border-line p-4">
-        <p className="mb-3 text-sm font-medium text-ink-900">{t('1. Where did it happen?', '1. ¿Dónde pasó?')}</p>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Field label={t('Place', 'Lugar')} value={org} onChange={(e) => setOrg(e.target.value)}
-                 placeholder={t('Company, club, project…', 'Empresa, club, proyecto…')} />
-          <Field label={t('Your role', 'Tu rol')} value={role} onChange={(e) => setRole(e.target.value)}
-                 placeholder={t('Intern, volunteer, president…', 'Pasante, voluntario, presidente…')} />
-          <Select label={t('Section', 'Sección')} value={kind} onChange={(e) => setKind(e.target.value as Experience['kind'])}>
-            <option value="work">{t('Work experience', 'Experiencia laboral')}</option>
-            <option value="extra">{t('Activities & leadership', 'Actividades y liderazgo')}</option>
-          </Select>
-        </div>
-        <div className="mt-3">
-          <Button variant="primary" disabled={!org.trim()} onClick={async () => {
-            const created = await api.create<Experience>('experience', {
-              kind, org: org.trim(), title: role.trim(), bullets: '[]', sort_order: store.experience.length,
-            });
-            setOrg(''); setRole('');
-            await reload();
-            setTargetId(created.id);
-          }}>{t('Add it', 'Agregar')}</Button>
-        </div>
-        {entries.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {entries.map((e) => <Badge key={e.id} tone={e.kind === 'work' ? 'sky' : 'amber'}>{e.org} · {parseBullets(e.bullets).length}</Badge>)}
-          </div>
-        )}
-      </div>
-
-      <div className="rounded-xl border border-brand-200 bg-brand-50/60 p-4">
-        <p className="mb-1 text-sm font-medium text-ink-900">{t('2. Now describe one thing you did there', '2. Ahora contá una cosa que hiciste ahí')}</p>
-        <p className="mb-3 text-xs text-ink-500">{t('Fill what you can. The sentence builds itself underneath.', 'Completá lo que puedas. La frase se arma sola abajo.')}</p>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label={t('Doing word', 'Verbo')} value={verb} onChange={(e) => setVerb(e.target.value)}
-                 placeholder={t('Organised / Sold / Built / Taught', 'Organicé / Vendí / Construí / Enseñé')} />
-          <Field label={t('What', 'Qué')} value={what} onChange={(e) => setWhat(e.target.value)}
-                 placeholder={t('the end-of-year event', 'el evento de fin de año')} />
-          <Field label={t('How big', 'Qué tan grande')} value={scale} onChange={(e) => setScale(e.target.value)}
-                 placeholder={t('200 people', '200 personas')} />
-          <Field label={t('What came of it', 'Qué resultó')} value={result} onChange={(e) => setResult(e.target.value)}
-                 placeholder={t('raised $4,000, double last year', 'recaudamos $4.000, el doble que el año anterior')} />
-        </div>
-        <div className="mt-3 rounded-lg border border-line bg-surface px-3 py-2 text-sm">
-          {bullet ? <span className="text-ink-900">• {bullet}{bullet.endsWith('.') ? '' : '.'}</span>
-                  : <span className="text-ink-400">{t('Your line appears here.', 'Tu línea aparece acá.')}</span>}
-        </div>
-        <div className="mt-3 flex flex-wrap items-end gap-2">
-          <Select label={t('Add to', 'Agregar a')} value={target?.id ?? ''} onChange={(e) => setTargetId(Number(e.target.value))} className="w-56">
-            {entries.map((e) => <option key={e.id} value={e.id}>{e.org}</option>)}
-          </Select>
-          <Button variant="primary" disabled={!target || !bullet.trim()} onClick={async () => {
-            if (!target) return;
-            const bs = parseBullets(target.bullets);
-            bs.push({ text: bullet.endsWith('.') ? bullet : `${bullet}.`, es: '', tracks: [] });
-            await api.update('experience', target.id, { bullets: JSON.stringify(bs) });
-            setVerb(''); setWhat(''); setScale(''); setResult('');
-            await reload();
-            done('experience');
-          }}>{t('Add this line', 'Agregar esta línea')}</Button>
-          <Button variant="ghost" onClick={() => { done('experience'); next(); }}>{t('Done adding →', 'Listo →')}</Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * The gaps a reviewer always names: skills, grades, coursework, projects, activities, LinkedIn.
- * Each is a box here rather than a note telling you to go and find one.
- */
-function ExtrasStep({ store, reload, done, next, t }: Ctx) {
-  const education = store.experience.filter((e) => e.kind === 'education');
-  const [skills, setSkills] = useState(store.profile.skills);
-  const [languages, setLanguages] = useState(store.profile.languages);
-  const [linkedin, setLinkedin] = useState(store.profile.linkedin);
-  const [eduId, setEduId] = useState<number | ''>(education[0]?.id ?? '');
-  const [grade, setGrade] = useState('');
-  const [courses, setCourses] = useState('');
-  const [project, setProject] = useState('');
-  const [activity, setActivity] = useState('');
-  const [msg, setMsg] = useState('');
-
-  const addEduBullet = async (text: string) => {
-    const edu = store.experience.find((e) => e.id === eduId) ?? education[0];
-    if (!edu || !text.trim()) return;
-    const bs = parseBullets(edu.bullets);
-    bs.push({ text: text.trim(), es: '', tracks: [] });
-    await api.update('experience', edu.id, { bullets: JSON.stringify(bs) });
-  };
-
-  const save = async () => {
-    await api.saveProfile({ skills, languages, linkedin });
-    if (grade.trim()) await addEduBullet(grade);
-    if (courses.trim()) await addEduBullet(t(`Relevant coursework: ${courses}`, `Materias relevantes: ${courses}`));
-    if (project.trim()) {
-      await api.create('experience', {
-        kind: 'extra', org: t('Projects', 'Proyectos'), title: '', bullets: JSON.stringify([{ text: project.trim(), es: '', tracks: [] }]),
-        sort_order: store.experience.length,
-      });
-    }
-    if (activity.trim()) {
-      await api.create('experience', {
-        kind: 'extra', org: t('Activities', 'Actividades'), title: '', bullets: JSON.stringify([{ text: activity.trim(), es: '', tracks: [] }]),
-        sort_order: store.experience.length + 1,
-      });
-    }
-    setGrade(''); setCourses(''); setProject(''); setActivity('');
-    await reload();
-    done('extras');
-    setMsg(t('Saved. Add more here any time, or edit it all on the My CV screen.',
-             'Guardado. Podés agregar más acá cuando quieras, o editarlo todo en Mi CV.'));
-  };
-
-  return (
-    <div className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Area label={t('Skills and tools — the ones you would be happy to be asked about',
-                       'Habilidades y herramientas — las que te bancarías que te pregunten')}
-              rows={2} value={skills} onChange={(e) => setSkills(e.target.value)}
-              placeholder={t('Excel, SQL, Python, Canva, Photoshop…', 'Excel, SQL, Python, Canva, Photoshop…')} />
-        <Area label={t('Languages and level', 'Idiomas y nivel')} rows={2} value={languages} onChange={(e) => setLanguages(e.target.value)}
-              placeholder={t('Spanish (native), English (B2)', 'Español (nativo), Inglés (B2)')} />
-
-        <Field label={t('LinkedIn profile', 'Perfil de LinkedIn')} value={linkedin} onChange={(e) => setLinkedin(e.target.value)}
-               placeholder="linkedin.com/in/…" />
-        {education.length > 0 && (
-          <Select label={t('Add the next two to', 'Agregar los dos siguientes a')} value={eduId}
-                  onChange={(e) => setEduId(Number(e.target.value))}>
-            {education.map((e) => <option key={e.id} value={e.id}>{e.org}</option>)}
-          </Select>
-        )}
-
-        <Field label={t('Grade average, honours or awards — only if it helps you',
-                        'Promedio, distinciones o premios — sólo si te suma')}
-               value={grade} onChange={(e) => setGrade(e.target.value)}
-               placeholder={t('GPA 8.4/10, top 10% of cohort', 'Promedio 8,4/10, primer 10% de la camada')} />
-        <Field label={t('Relevant coursework', 'Materias relevantes')} value={courses} onChange={(e) => setCourses(e.target.value)}
-               placeholder={t('Corporate finance, statistics, econometrics', 'Finanzas corporativas, estadística, econometría')} />
-
-        <Area label={t('A project — academic or personal', 'Un proyecto — académico o personal')} rows={2} value={project}
-              onChange={(e) => setProject(e.target.value)}
-              placeholder={t('What it was, what you did, what came out of it.', 'Qué era, qué hiciste, qué salió de ahí.')} />
-        <Area label={t('An activity — club, society, volunteering, sport', 'Una actividad — club, sociedad, voluntariado, deporte')}
-              rows={2} value={activity} onChange={(e) => setActivity(e.target.value)}
-              placeholder={t('Your role, how long, how many people.', 'Tu rol, cuánto tiempo, cuánta gente.')} />
-      </div>
-
-      <SaveBar label={t('Save and continue', 'Guardar y continuar')} onSave={save}
-               extra={<Button variant="ghost" onClick={next}>{t('Continue →', 'Continuar →')}</Button>} />
-      {msg && <p className="text-sm text-brand-700">{msg}</p>}
-    </div>
-  );
-}
-
-function NumbersStep({ store, done, next, t }: Ctx) {
-  const rows = store.experience.flatMap((e) => parseBullets(e.bullets).map((b) => ({ org: e.org, text: b.text, ok: hasDigit(b.text) })));
-  const without = rows.filter((r) => !r.ok);
-
-  return (
-    <div className="space-y-3">
-      {rows.length === 0 ? <p className="text-sm text-ink-500">{t('Nothing to check yet.', 'Todavía no hay nada que revisar.')}</p>
-        : without.length === 0 ? <p className="text-sm text-emerald-700">{t('Every line has a number. That is rarer than you would think.', 'Todas las líneas tienen un número. Es más raro de lo que parece.')}</p>
-        : (
-          <>
-            <p className="text-sm text-ink-700">
-              {t(`${rows.length - without.length} of ${rows.length} lines have a number. These do not:`,
-                 `${rows.length - without.length} de ${rows.length} líneas tienen un número. Estas no:`)}
-            </p>
-            <ul className="space-y-1">
-              {without.slice(0, 8).map((r, i) => (
-                <li key={i} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-ink-700">
-                  <span className="text-xs text-ink-500">{r.org}: </span>{r.text}
-                </li>
-              ))}
-            </ul>
-            <Link to="/profile"><Button variant="primary">{t('Edit them', 'Editarlas')}</Button></Link>
-          </>
-        )}
-      <Button variant="ghost" onClick={() => { done('numbers'); next(); }}>{t('Continue →', 'Continuar →')}</Button>
-    </div>
-  );
-}
-
-function AIKey({ reload, done, next, t }: Ctx) {
-  const [status, setStatus] = useState<{ configured: boolean; source: string; model: string; hint: string } | null>(null);
-  const [key, setKey] = useState('');
-  const [msg, setMsg] = useState('');
-
-  useEffect(() => { void api.aiStatus().then(setStatus).catch(() => setStatus(null)); }, []);
-
-  return (
-    <div className="space-y-3">
-      {status?.configured ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge tone="emerald">{t('connected', 'conectada')}</Badge>
-          <span className="text-sm text-ink-700">
-            {t('key ending', 'clave terminada en')} {status.hint} · {status.model} ·{' '}
-            {status.source === 'env' ? t('from your .env file', 'desde tu archivo .env') : t('stored in this app', 'guardada en esta app')}
-          </span>
-        </div>
-      ) : (
-        <ol className="space-y-1.5 text-sm text-ink-700">
-          <li className="flex gap-2"><span className="text-brand-500">1.</span>
-            <span>{t('Go to', 'Andá a')} <a className="text-brand-700 underline" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">aistudio.google.com/apikey</a> {t('and create a key. It is free to make.', 'y creá una clave. Crearla es gratis.')}</span></li>
-          <li className="flex gap-2"><span className="text-brand-500">2.</span><span>{t('Copy it and paste it below.', 'Copiala y pegala acá abajo.')}</span></li>
-        </ol>
+        </details>
       )}
 
-      <div className="flex flex-wrap items-end gap-2">
-        <Field label={t('Google AI API key', 'Clave de API de Google AI')} type="password" value={key}
-               onChange={(e) => setKey(e.target.value)} placeholder={t('paste your key here', 'pegá tu clave acá')}
-               className="min-w-64 flex-1" autoComplete="off" />
-        <Button variant="primary" disabled={!key.trim()} onClick={async () => {
-          setStatus(await api.aiSetKey(key.trim()));
-          setKey('');
-          setMsg(t('Saved. The next two steps now work.', 'Guardada. Los dos pasos siguientes ya funcionan.'));
-          await reload();
-          done('key');
-        }}>{t('Save key', 'Guardar clave')}</Button>
-        {status?.configured && (
-          <Button variant="ghost" onClick={async () => { setStatus(await api.aiSetKey('')); setMsg(t('Key removed.', 'Clave eliminada.')); }}>
-            {t('Remove', 'Eliminar')}
-          </Button>
-        )}
-        <Button variant="ghost" onClick={next}>{t('Continue →', 'Continuar →')}</Button>
-      </div>
+      {hasExisting && (
+        <label className="flex items-start gap-2 rounded-xl bg-sunken px-4 py-3 text-sm text-ink-700">
+          <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} className="mt-0.5 h-4 w-4 accent-brand-600" />
+          <span>{t('Start fresh from this CV — replace what’s already in Career Lab (otherwise it’s added alongside).',
+                   'Empezar de cero con este CV — reemplazar lo que ya hay en Career Lab (si no, se agrega al lado).')}</span>
+        </label>
+      )}
 
-      {msg && <p className="text-sm text-brand-700">{msg}</p>}
-      <p className="text-xs text-ink-500">
-        {t('Stored on this machine only. Google charges your own account for what you use, and this app only calls it when you press a button.',
-           'Se guarda sólo en esta computadora. Google le cobra a tu propia cuenta lo que uses, y esta app sólo la llama cuando apretás un botón.')}
-      </p>
-    </div>
-  );
-}
-
-function AIBullets({ store, reload, done, next, t, lang }: Ctx) {
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [suggestions, setSuggestions] = useState<BulletSuggestion[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-
-  const rows = store.experience.flatMap((e) =>
-    parseBullets(e.bullets).map((b, i) => ({ key: `${e.id}:${i}`, expId: e.id, index: i, org: e.org, text: b.text })));
-
-  const run = async () => {
-    const picked = rows.filter((r) => selected.has(r.key));
-    if (!picked.length) return;
-    setBusy(true); setErr('');
-    try {
-      const res = await api.aiBullets({ bullets: picked.map((p) => p.text), track: firstTrack(store), lang });
-      setSuggestions(res.suggestions);
-    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
-    setBusy(false);
-  };
-
-  const accept = async (s: BulletSuggestion) => {
-    const row = rows.find((r) => r.text === s.original);
-    const exp = row && store.experience.find((e) => e.id === row.expId);
-    if (!row || !exp) return;
-    const bs = parseBullets(exp.bullets);
-    bs[row.index] = { ...bs[row.index], text: s.improved };
-    await api.update('experience', exp.id, { bullets: JSON.stringify(bs) });
-    setSuggestions((list) => list.filter((x) => x !== s));
-    await reload();
-    done('rewrite');
-  };
-
-  if (!rows.length) return <p className="text-sm text-ink-500">{t('Add some lines to your CV first.', 'Primero agregá algunas líneas a tu CV.')}</p>;
-
-  return (
-    <div className="space-y-3">
-      <div className="space-y-1">
-        {rows.map((r) => (
-          <label key={r.key} className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-sunken">
-            <input type="checkbox" checked={selected.has(r.key)} className="mt-0.5 accent-brand-600"
-                   onChange={() => setSelected((s) => { const n = new Set(s); n.has(r.key) ? n.delete(r.key) : n.add(r.key); return n; })} />
-            <span className="text-ink-700"><span className="text-xs text-ink-400">{r.org}: </span>{r.text}</span>
-          </label>
-        ))}
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <Button onClick={() => setSelected(new Set(rows.map((r) => r.key)))}>{t('Select all', 'Seleccionar todo')}</Button>
-        <Button variant="primary" disabled={!selected.size || busy} onClick={run}>
-          {busy ? t('Thinking…', 'Pensando…') : t(`Improve ${selected.size || ''} with AI`, `Mejorar ${selected.size || ''} con IA`)}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button variant="primary" className="px-6 py-3 text-base" disabled={busy}
+                onClick={async () => { setBusy(true); try { await onConfirm(replace); } finally { setBusy(false); } }}>
+          {busy ? t('Saving…', 'Guardando…') : t('Looks right — continue →', 'Está bien — continuar →')}
         </Button>
-        <Button variant="ghost" onClick={() => { done('rewrite'); next(); }}>{t('Continue →', 'Continuar →')}</Button>
+        <Button variant="ghost" onClick={onRetry}>{t('Try another file', 'Probar con otro archivo')}</Button>
       </div>
-
-      {err && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">{err}</p>}
-
-      {suggestions.map((s, i) => (
-        <Card key={i} className="animate-rise space-y-2 p-3 text-sm">
-          <p className="text-ink-400 line-through">{s.original}</p>
-          <p className="font-medium text-ink-900">{s.improved}</p>
-          <p className="text-xs text-ink-500">{s.why}</p>
-          {s.needs?.length > 0 && <p className="text-xs text-amber-700">{t('It needs from you:', 'Necesita de vos:')} {s.needs.join(' · ')}</p>}
-          <div className="flex gap-2">
-            <Button variant="soft" onClick={() => accept(s)}>{t('Use this', 'Usar esta')}</Button>
-            <Button variant="ghost" onClick={() => setSuggestions((l) => l.filter((x) => x !== s))}>{t('Keep mine', 'Dejar la mía')}</Button>
-          </div>
-        </Card>
-      ))}
     </div>
   );
 }
 
-function AIReview({ store, reload, done, next, t, lang }: Ctx) {
-  const [summary, setSummary] = useState('');
-  const [review, setReview] = useState<{ verdict: string; strengths: string[]; fixes: { problem: string; fix: string; where: string }[]; missing: string[] } | null>(null);
-  const [edits, setEdits] = useState<FieldEdit[]>([]);
-  const [busy, setBusy] = useState('');
-  const [err, setErr] = useState('');
-
-  const track = firstTrack(store);
-  const cv = buildCV(store.profile, store.experience, { track, lang, template: 'ats', maxBullets: 99 });
-
-  /** Every addressable field, so the model can return edits we can actually apply. */
-  const fields = (): FieldItem[] => {
-    const out: FieldItem[] = [
-      { target: 'profile.name', label: t('Name', 'Nombre'), value: store.profile.name },
-      { target: 'profile.headline', label: t('Headline', 'Encabezado'), value: store.profile.headline },
-      { target: 'profile.summary', label: t('Profile paragraph', 'Párrafo de perfil'), value: store.profile.summary },
-      { target: 'profile.skills', label: t('Skills', 'Habilidades'), value: store.profile.skills },
-      { target: 'profile.languages', label: t('Languages', 'Idiomas'), value: store.profile.languages },
-      { target: 'profile.location', label: t('Location', 'Ubicación'), value: store.profile.location },
-    ].filter((f) => f.value.trim());
-
-    for (const e of store.experience) {
-      if (e.org.trim()) out.push({ target: `exp.${e.id}.org`, label: t('Organisation', 'Organización'), value: e.org });
-      if (e.title.trim()) out.push({ target: `exp.${e.id}.title`, label: t('Job title', 'Puesto'), value: e.title });
-      parseBullets(e.bullets).forEach((b, i) => {
-        if (b.text.trim()) out.push({ target: `exp.${e.id}.bullet.${i}`, label: `${e.org} — ${t('line', 'línea')} ${i + 1}`, value: b.text });
-      });
-    }
-    return out;
-  };
-
-  const call = async (what: 'summary' | 'review' | 'polish') => {
-    setBusy(what); setErr('');
-    try {
-      if (what === 'summary') {
-        const res = await api.aiSummary({
-          headline: store.profile.headline,
-          bullets: store.experience.flatMap((e) => parseBullets(e.bullets).map((b) => b.text)),
-          track, lang,
-        });
-        setSummary(res.text);
-      } else if (what === 'review') {
-        setReview((await api.aiReview({ cv, track, lang })).review);
-      } else {
-        setEdits((await api.aiPolish({ fields: fields(), track, lang })).edits);
-      }
-    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
-    setBusy('');
-  };
-
-  /** Applies one returned edit to the field it names. */
-  const apply = async (edit: FieldEdit) => {
-    const [scope, a, b, c] = edit.target.split('.');
-    if (scope === 'profile') {
-      await api.saveProfile({ [a]: edit.to });
-    } else if (scope === 'exp') {
-      const exp = store.experience.find((e) => e.id === Number(a));
-      if (!exp) return;
-      if (b === 'bullet') {
-        const bs = parseBullets(exp.bullets);
-        const i = Number(c);
-        if (!bs[i]) return;
-        bs[i] = { ...bs[i], text: edit.to };
-        await api.update('experience', exp.id, { bullets: JSON.stringify(bs) });
-      } else {
-        await api.update('experience', exp.id, { [b]: edit.to });
-      }
-    }
-    setEdits((list) => list.filter((x) => x !== edit));
-    await reload();
-    done('profile-para');
-  };
-
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap gap-2">
-        <Button variant="primary" disabled={busy !== ''} onClick={() => call('summary')}>
-          {busy === 'summary' ? t('Writing…', 'Escribiendo…') : t('Write my profile paragraph', 'Escribir mi párrafo de perfil')}
-        </Button>
-        <Button variant="soft" disabled={busy !== ''} onClick={() => call('review')}>
-          {busy === 'review' ? t('Reading…', 'Leyendo…') : t('Review my whole CV', 'Revisar todo mi CV')}
-        </Button>
-        <Button variant="soft" disabled={busy !== ''} onClick={() => call('polish')}>
-          {busy === 'polish' ? t('Checking…', 'Revisando…') : t('Fix typos and wording', 'Corregir errores y redacción')}
-        </Button>
-        <Button variant="ghost" onClick={() => { done('profile-para'); next(); }}>{t('Continue →', 'Continuar →')}</Button>
-      </div>
-
-      {err && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">{err}</p>}
-
-      {summary && (
-        <Card className="animate-rise space-y-2 p-3">
-          <Area rows={3} value={summary} onChange={(e) => setSummary(e.target.value)} />
-          <SaveBar label={t('Use this as my profile', 'Usar esto como mi perfil')} onSave={async () => {
-            await api.saveProfile({ summary });
-            await reload();
-            done('profile-para');
-          }} />
-        </Card>
-      )}
-
-      {edits.length > 0 && (
-        <Card className="animate-rise space-y-2 p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-ink-900">{t('Suggested corrections', 'Correcciones sugeridas')}</p>
-            <Button variant="soft" onClick={async () => { for (const e of [...edits]) await apply(e); }}>
-              {t('Apply all', 'Aplicar todas')}
-            </Button>
-          </div>
-          {edits.map((e, i) => (
-            <div key={i} className="rounded-lg border border-line px-3 py-2 text-sm">
-              <p className="text-[11px] uppercase tracking-wider text-ink-400">{e.label}</p>
-              <p className="text-ink-400 line-through">{e.from}</p>
-              <p className="font-medium text-ink-900">{e.to}</p>
-              <div className="mt-1 flex items-center gap-2">
-                <span className="text-xs text-ink-500">{e.why}</span>
-                <Button variant="soft" className="ml-auto" onClick={() => apply(e)}>{t('Apply', 'Aplicar')}</Button>
-                <Button variant="ghost" onClick={() => setEdits((l) => l.filter((x) => x !== e))}>{t('Ignore', 'Ignorar')}</Button>
-              </div>
-            </div>
-          ))}
-        </Card>
-      )}
-
-      {review && (
-        <Card className="animate-rise space-y-3 p-4 text-sm">
-          <p className="font-medium text-ink-900">{review.verdict}</p>
-          {review.strengths?.length > 0 && (
-            <div>
-              <p className="text-[11px] uppercase tracking-wider text-ink-500">{t('Working', 'Lo que funciona')}</p>
-              <ul className="mt-1 space-y-0.5 text-emerald-700">{review.strengths.map((x, i) => <li key={i}>✓ {x}</li>)}</ul>
-            </div>
-          )}
-          {review.fixes?.length > 0 && (
-            <div>
-              <p className="text-[11px] uppercase tracking-wider text-ink-500">{t('Fix these', 'Corregí esto')}</p>
-              <ul className="mt-1 space-y-2">
-                {review.fixes.map((f, i) => (
-                  <li key={i} className="rounded-lg border border-line px-3 py-2">
-                    <p className="text-ink-900">{f.problem}</p>
-                    <p className="text-ink-700">→ {f.fix}</p>
-                    <p className="text-xs text-ink-400">{f.where}</p>
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-2 text-xs text-ink-500">
-                {t('“Fix typos and wording” above turns most of these into one-click corrections.',
-                   '“Corregir errores y redacción”, arriba, convierte la mayoría de estas en correcciones de un clic.')}
-              </p>
-            </div>
-          )}
-          {review.missing?.length > 0 && (
-            <div>
-              <p className="text-[11px] uppercase tracking-wider text-ink-500">{t('Missing', 'Falta')}</p>
-              <ul className="mt-1 space-y-0.5 text-amber-700">{review.missing.map((x, i) => <li key={i}>• {x}</li>)}</ul>
-              <p className="mt-2 text-xs text-ink-500">
-                {t('Most of these have a box in the earlier step “The things recruiters look for and rarely find”.',
-                   'Casi todas tienen un campo en el paso anterior “Lo que los reclutadores buscan y casi nunca encuentran”.')}
-              </p>
-            </div>
-          )}
-        </Card>
-      )}
-    </div>
-  );
-}

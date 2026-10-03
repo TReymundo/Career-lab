@@ -32,7 +32,7 @@ const ts = (iso: string) => {
   return Number.isNaN(t) ? null : t;
 };
 
-export default function Dashboard({ store, reload }: { store: Store; reload: () => Promise<void> }) {
+export default function Dashboard({ store, reload, overviewOnly = false }: { store: Store; reload: () => Promise<void>; overviewOnly?: boolean }) {
   const t = useT();
 
   const live = store.application.filter((a) => LIVE_STATUSES.includes(a.status));
@@ -76,10 +76,10 @@ export default function Dashboard({ store, reload }: { store: Store; reload: () 
   const due = [
     ...store.application
       .filter((a) => a.next_action_on && LIVE_STATUSES.includes(a.status))
-      .map((a) => ({ when: a.next_action_on, what: a.next_action || t('Next step', 'Próximo paso'), who: `${a.company} — ${a.role}`, to: '/pipeline' })),
+      .map((a) => ({ when: a.next_action_on, what: a.next_action || t('Next step', 'Próximo paso'), who: `${a.company} — ${a.role}`, to: '/track' })),
     ...store.application
       .filter((a) => a.deadline && ['saved', 'tailored'].includes(a.status))
-      .map((a) => ({ when: a.deadline, what: t('Application deadline', 'Cierre de la postulación'), who: `${a.company} — ${a.role}`, to: '/pipeline' })),
+      .map((a) => ({ when: a.deadline, what: t('Application deadline', 'Cierre de la postulación'), who: `${a.company} — ${a.role}`, to: '/track' })),
     ...store.contact
       .filter((c) => c.next_touch)
       .map((c) => ({ when: c.next_touch, what: t('Follow up', 'Volver a escribir'), who: `${c.name}${c.company ? ` · ${c.company}` : ''}`, to: '/contacts' })),
@@ -95,7 +95,7 @@ export default function Dashboard({ store, reload }: { store: Store; reload: () 
 
   return (
     <div className="space-y-8">
-      <CVFactory store={store} reload={reload} />
+      {!overviewOnly && <CVFactory store={store} reload={reload} />}
 
       <div className="border-t border-line pt-6">
         <SectionTitle>{t('How the search is going', 'Cómo va la búsqueda')}</SectionTitle>
@@ -131,7 +131,7 @@ export default function Dashboard({ store, reload }: { store: Store; reload: () 
 
       <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
         <div>
-          <SectionTitle right={<Link to="/pipeline" className="text-xs text-brand-600 hover:underline">{t('Pipeline →', 'Tablero →')}</Link>}>
+          <SectionTitle right={<Link to="/track" className="text-xs text-brand-600 hover:underline">{t('Pipeline →', 'Tablero →')}</Link>}>
             {t('What’s due', 'Qué vence')}
           </SectionTitle>
           {due.length === 0 ? (
