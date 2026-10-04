@@ -71,10 +71,34 @@ function parseJson<T>(text: string): T {
  * JSON answers are checked by the router itself: an answer that does not parse counts as that
  * route failing, so the next model is asked — and the broken answer is never cached.
  */
-const parses = (text: string) => { try { parseJson(text); return true; } catch { return false; } };
+/**
+ * Models other than Gemini do not honour the response schema exactly: a list often comes back
+ * wrapped in an object ({"items": [...]}, {"result": [...]}) or as a single bare object. This
+ * brings the answer back to the shape the schema asked for, so the caller never sees the
+ * difference. An answer that cannot be brought into shape counts as a failure of that model.
+ */
+function shape(value: unknown, schema?: Record<string, unknown>): unknown {
+  if (!schema) return value;
+  const wantArray = schema.type === 'array';
+  if (wantArray && !Array.isArray(value) && value && typeof value === 'object') {
+    const inner = Object.values(value as Record<string, unknown>).find(Array.isArray);
+    if (inner) return inner;
+    return [value]; // a single item, sent bare
+  }
+  if (!wantArray && Array.isArray(value) && value.length === 1 && typeof value[0] === 'object') return value[0];
+  return value;
+}
+
+const fits = (schema?: Record<string, unknown>) => (text: string) => {
+  try {
+    const v = shape(parseJson(text), schema);
+    return schema?.type === 'array' ? Array.isArray(v) : Boolean(v && typeof v === 'object' && !Array.isArray(v));
+  } catch { return false; }
+};
 
 async function json<T>(prompt: string, opts: CallOptions): Promise<T> {
-  return parseJson<T>(await callGemini(`${prompt}\n\nReturn ONLY the JSON.`, { ...opts, validate: parses }));
+  const text = await callGemini(`${prompt}\n\nReturn ONLY the JSON.`, { ...opts, validate: fits(opts.schema) });
+  return shape(parseJson(text), opts.schema) as T;
 }
 
 const LANG_NAME = { en: 'English', es: 'Latin American Spanish (voseo, as used in Argentina and Uruguay)' } as const;
@@ -560,6 +584,59 @@ Return:
 }
 
 /**
+ * The CV's experience, skills, languages and profile, drafted from the interview — so the
+ * build-with-me path never needs a form for them. Only what the person said; nothing private.
+ */
+export interface CVDraft {
+  entries: { kind: 'work' | 'extra' | 'education'; org: string; title: string; location: string; start_date: string; end_date: string; bullets: string[] }[];
+  skills: string;
+  languages: string;
+  summary: string;
+}
+
+const DRAFT_SCHEMA: Schema = {
+  type: 'object',
+  properties: {
+    entries: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          kind: { type: 'string', enum: ['work', 'extra', 'education'] },
+          org: S, title: S, location: S, start_date: S, end_date: S,
+          bullets: { type: 'array', items: S },
+        },
+        required: ['kind', 'org', 'title', 'location', 'start_date', 'end_date', 'bullets'],
+      },
+    },
+    skills: S, languages: S, summary: S,
+  },
+  required: ['entries', 'skills', 'languages', 'summary'],
+};
+
+export async function draftCVFromInterview(input: { answers: string; existing: string; lang: Lang }) {
+  const prompt = `Someone answered open questions in a relaxed interview. Turn what they said into CV content.
+
+ALREADY ON THEIR CV (do not repeat these entries):
+${input.existing || '(nothing yet)'}
+
+THE INTERVIEW:
+${input.answers.slice(0, 16000)}
+
+Return:
+- "entries": every job, internship, freelance gig, family business, volunteering, club role, team captaincy or real project they described that is NOT already on the CV. kind "work" for anything paid or work-like, "extra" for projects/activities/volunteering, "education" only for a course or school not yet on the CV.
+  org = where, title = their role or the project's name, location/dates only if they said them (else "").
+  bullets = 1–4 CV lines each, starting with a verb, built ONLY from what they said; keep every number and tool they mentioned; if they gave no number, write the line without one. Never invent.
+- "skills": concrete skills and tools they mentioned or clearly showed, grouped one group per line as "Category - item, item" (e.g. "Data - Excel, SQL, Power BI"). Empty string if none.
+- "languages": languages with level as they described it, e.g. "Spanish (native), English (C1)". Empty string if they did not say.
+- "summary": a 2–3 sentence CV profile in third-person-free style ("Business student who…"), built from what they said.
+NEVER use anything about romance, relationships, health, family conflict or anything intimate — those stay private.
+Many answers were DICTATED through speech recognition, which mishears words. Fix obvious mis-hearings from context before using them (e.g. "district reporting" from a finance student is "risk reporting"; "Jay Pee Morgan" is "J.P. Morgan"; "power by" is "Power BI"), but never invent anything beyond correcting a misheard word.
+Write everything in ${LANG_NAME[input.lang]}.`;
+  return json<CVDraft>(prompt, { system: houseRules(input.lang), schema: DRAFT_SCHEMA, maxTokens: 6000 });
+}
+
+/**
  * Turns interview answers into the story bank — several answers per call, so ten long answers
  * cost three or four requests instead of thirty. Extraction only: nothing invented.
  */
@@ -590,7 +667,9 @@ Return a list. Each item has "answer" = the number of the answer it came from, a
 - kind "value": something they care about or want. kind "trait": how they are, as shown by what they said (not flattery).
 - "shows": comma-separated qualities an employer would read into it (e.g. "resilience, discipline, analysis") — empty for facts.
 - "private": true for romance/relationships, health, family conflict or anything intimate — those help understand the person but must never appear in a document. false otherwise.
-Never invent anything they did not say.`;
+Never invent anything they did not say.
+Many answers were DICTATED through speech recognition, which mishears words. Fix obvious mis-hearings from context before using them (e.g. "district reporting" from a finance student is "risk reporting"; "Jay Pee Morgan" is "J.P. Morgan"; "power by" is "Power BI"), but never invent anything beyond correcting a misheard word.
+`;
   return json<(StoryItem & { answer: number })[]>(prompt, {
     system: `You write ALL output in ${LANG_NAME[lang]}. You never invent facts about the person.`,
     schema: EXTRACT_STORIES_SCHEMA,

@@ -20,6 +20,17 @@ export function storyStatus() {
   return { pending, working: running, lastError: pending ? lastError : '', retryIn: retryAt > Date.now() ? Math.ceil((retryAt - Date.now()) / 1000) : 0 };
 }
 
+/**
+ * Reads every interview answer again from scratch — for when the bank came out thin (a model
+ * that misread the request) or the person wants a fresh pass. Stories you created by answering
+ * a kit's quick questions are left alone.
+ */
+export function reprocessStories(lang: Lang = 'en') {
+  db.prepare("DELETE FROM story WHERE answer_id IN (SELECT id FROM story_answer WHERE theme != 'gap')").run();
+  db.prepare("UPDATE story_answer SET processed = 0 WHERE theme != 'gap'").run();
+  processStories(lang);
+}
+
 export function processStories(lang: Lang = 'en') {
   if (running) return;
   if (timer) { clearTimeout(timer); timer = null; }

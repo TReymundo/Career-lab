@@ -27,7 +27,8 @@ import { toast } from '../components/Toast.tsx';
 type Path = 'upload' | 'build';
 interface Flow { path: Path | null; seq: string[]; at: number }
 
-const BUILD = ['name', 'contact', 'target', 'education', 'experience', 'skills'];
+// Experience and skills are not forms any more: they come out of the "get to know you" chat.
+const BUILD = ['name', 'contact', 'target', 'education'];
 const MAX_NUMBER_QUESTIONS = 5;
 
 const firstTrack = (s: Store): Track => {
@@ -43,9 +44,7 @@ function gapsFor(s: Store): string[] {
   if (!p.email.trim() || !p.phone.trim() || !p.location.trim()) out.push('contact');
   if (!p.headline.trim()) out.push('target');
   if (!s.experience.some((e) => e.kind === 'education')) out.push('education');
-  if (!done.some((e) => parseBullets(e.bullets).length)) out.push('experience');
   out.push(...numberGaps(s).slice(0, MAX_NUMBER_QUESTIONS));
-  if (!p.skills.trim() || !p.languages.trim()) out.push('skills');
   return out;
 }
 
@@ -137,7 +136,8 @@ export default function Start({ store, reload }: { store: Store; reload: () => P
       const [, id, i] = screen.split(':');
       return <NumberQ {...q} expId={Number(id)} index={Number(i)} />;
     }
-    return <CVStudio store={store} reload={reload} onFix={fix} onRestart={() => setFlow({ path: null, seq: ['choose'], at: 0 }, 'back')} />;
+    return <CVStudio store={store} reload={reload} onFix={fix} onRestart={() => setFlow({ path: null, seq: ['choose'], at: 0 }, 'back')}
+                     onUpload={() => setFlow({ path: 'upload', seq: ['choose', 'upload', 'found'], at: 1 })} />;
   })();
 
   return (
@@ -320,7 +320,7 @@ function Upload({ onParsed }: { onParsed: (cv: ParsedCV, via: 'ai' | 'rules') =>
             </div>
             <span className="font-display text-xl font-semibold text-forest-900">{drag ? t('Let go — I’ve got it', 'Soltalo — lo tengo') : t('Drop your CV, or click to choose', 'Soltá tu CV, o hacé clic para elegirlo')}</span>
             <span className="text-xs text-ink-500">
-              {status?.configured ? t('Word (.docx) or PDF', 'Word (.docx) o PDF') : t('Word (.docx) — or PDF with a free Google key', 'Word (.docx) — o PDF con una clave gratis de Google')}
+              {t('PDF or Word (.docx)', 'PDF o Word (.docx)')}
             </span>
           </>
         )}
@@ -330,7 +330,7 @@ function Upload({ onParsed }: { onParsed: (cv: ParsedCV, via: 'ai' | 'rules') =>
       {msg && <p className="animate-fade rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700">{msg}</p>}
 
       <KeyBox status={status} onChange={setStatus}
-              reason={t('With a free Google AI key, it reads PDFs and gets far more right.', 'Con una clave gratis de Google AI, lee PDFs y acierta mucho más.')} />
+              reason={t('With a free AI key it reads your CV far more accurately.', 'Con una clave gratis de IA lee tu CV con mucha más precisión.')} />
 
       <details className="text-sm">
         <summary className="cursor-pointer text-ink-500 hover:text-ink-900">{t('Or paste the text of your CV', 'O pegá el texto de tu CV')}</summary>

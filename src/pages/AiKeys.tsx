@@ -23,6 +23,9 @@ const KINDS = [
     how: { en: 'openrouter.ai/keys. Only its free models are used.', es: 'openrouter.ai/keys. Sólo se usan sus modelos gratis.' } },
 ] as const;
 
+/** "04:00" — when a resting model comes back, in this computer's time. */
+const clock = (iso: string) => (iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
+
 export default function AiKeys() {
   const t = useT();
   const [health, setHealth] = useState<AiHealth | null>(null);
@@ -35,7 +38,7 @@ export default function AiKeys() {
   useEffect(() => { void load(); const id = setInterval(() => void load(), 5000); return () => clearInterval(id); }, []);
 
   const routes = health?.routes ?? [];
-  const ready = routes.filter((r) => r.resting === 0).length;
+  const ready = routes.filter((r) => r.ready).length;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -60,10 +63,15 @@ export default function AiKeys() {
           <div className="stagger grid gap-1.5 border-t border-line bg-sunken/40 p-4 sm:grid-cols-2">
             {routes.map((r) => (
               <div key={r.id} className="flex items-center gap-2.5 rounded-lg bg-surface px-3 py-2 text-xs">
-                <span className={`h-2 w-2 shrink-0 rounded-full ${r.resting ? 'bg-amber-400' : 'bg-brand-500'}`} />
-                <span className="min-w-0 flex-1 truncate text-ink-700">{r.label}</span>
+                <span className={`h-2 w-2 shrink-0 rounded-full ${r.ready ? 'bg-brand-500' : r.resting ? 'bg-amber-400' : 'bg-rose-400'}`} />
+                <span className="min-w-0 flex-1 truncate text-ink-700" title={r.lastError}>{r.label}</span>
                 <span className="shrink-0 tabular-nums text-ink-400">
-                  {r.resting ? t(`resting ${r.resting > 90 ? `${Math.ceil(r.resting / 60)}m` : `${r.resting}s`}`, `descansa ${r.resting > 90 ? `${Math.ceil(r.resting / 60)}m` : `${r.resting}s`}`) : r.ok ? `✓ ${r.ok}` : t('ready', 'listo')}
+                  {r.resting
+                    ? r.resting > 3600 || /daily/.test(r.lastError)
+                      ? t(`daily limit · back at ${clock(r.until)}`, `límite diario · vuelve a las ${clock(r.until)}`)
+                      : t(`resting ${r.resting > 90 ? `${Math.ceil(r.resting / 60)} min` : `${r.resting}s`}`, `descansa ${r.resting > 90 ? `${Math.ceil(r.resting / 60)} min` : `${r.resting}s`}`)
+                    : r.lastError ? t('not answering — retrying', 'no responde — reintentando')
+                    : r.ok ? `✓ ${r.ok}` : t('ready', 'listo')}
                 </span>
               </div>
             ))}

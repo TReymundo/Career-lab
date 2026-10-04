@@ -4,6 +4,7 @@ import { Area, Button, Card, Field } from './ui.tsx';
 import CVSheet from './CVSheet.tsx';
 import CVReveal from './CVReveal.tsx';
 import Polish from './Polish.tsx';
+import { AddToCV } from '../pages/Story.tsx';
 import { toast } from './Toast.tsx';
 import { api } from '../lib/api.ts';
 import { useT, useUILang } from '../lib/i18n.ts';
@@ -47,8 +48,8 @@ function Saved({ state }: { state: 'idle' | 'saving' | 'saved' }) {
   return <span className={`animate-fade text-xs ${state === 'saving' ? 'text-ink-400' : 'text-brand-600'}`}>{state === 'saving' ? t('Saving…', 'Guardando…') : `✓ ${t('Saved', 'Guardado')}`}</span>;
 }
 
-export default function CVStudio({ store, reload, onFix, onRestart }: {
-  store: Store; reload: () => Promise<void>; onFix: (c: Check) => void; onRestart: () => void;
+export default function CVStudio({ store, reload, onFix, onRestart, onUpload }: {
+  store: Store; reload: () => Promise<void>; onFix: (c: Check) => void; onRestart: () => void; onUpload: () => void;
 }) {
   const t = useT();
   const [editing, setEditing] = useState<Section | null>(null);
@@ -63,6 +64,7 @@ export default function CVStudio({ store, reload, onFix, onRestart }: {
   const must = checks.filter((c) => c.level === 'must');
   const passed = must.filter((c) => c.ok).length;
   const made = store.setting['celebrated:cv'] === 'done';
+  const noExperience = !store.experience.some((e) => e.kind !== 'education' && parseBullets(e.bullets).length);
 
   const open = (c: Check) => {
     const map: Record<string, Section> = { name: 'header', contact: 'header', target: 'header', education: 'education', experience: 'work', numbers: 'work', skills: 'skills', polish: 'profile', profile: 'work' };
@@ -101,7 +103,7 @@ export default function CVStudio({ store, reload, onFix, onRestart }: {
   const SECTIONS: { key: Section; title: string; peek: string }[] = [
     { key: 'header', title: t('Name & contact', 'Nombre y contacto'), peek: [store.profile.name, store.profile.headline].filter(Boolean).join(' — ') || t('Empty', 'Vacío') },
     { key: 'profile', title: t('Profile', 'Perfil'), peek: store.profile.summary || t('A 2–3 line summary at the top', 'Un resumen de 2–3 líneas arriba') },
-    { key: 'work', title: t('Experience', 'Experiencia'), peek: ofKind('work').map((e) => e.org || e.title).join(' · ') || t('Nothing yet', 'Nada todavía') },
+    { key: 'work', title: t('Experience', 'Experiencia'), peek: ofKind('work').map((e) => e.org || e.title).join(' · ') || t('Comes from your interview', 'Sale de tu entrevista') },
     { key: 'education', title: t('Education', 'Educación'), peek: ofKind('education').map((e) => e.org).join(' · ') || t('Nothing yet', 'Nada todavía') },
     { key: 'extra', title: t('Projects & activities', 'Proyectos y actividades'), peek: ofKind('extra').map((e) => e.title || e.org).join(' · ') || t('Optional', 'Opcional') },
     { key: 'skills', title: t('Skills & languages', 'Habilidades e idiomas'), peek: [store.profile.skills.split('\n')[0], store.profile.languages].filter(Boolean).join(' · ') || t('Nothing yet', 'Nada todavía') },
@@ -126,18 +128,41 @@ export default function CVStudio({ store, reload, onFix, onRestart }: {
           )}
         </ScoreCard>
 
-        <Link to="/story" className="group relative flex items-center gap-4 overflow-hidden rounded-2xl bg-forest-900 p-4 text-white shadow-lg shadow-forest-900/10 transition hover:-translate-y-0.5">
-          <span className="orb relative h-11 w-11 shrink-0 rounded-full" />
+        {/* The interview: where experience and skills come from in the build-with-me path. */}
+        <div className="relative overflow-hidden rounded-3xl bg-forest-900 p-5 text-white shadow-lg shadow-forest-900/10">
+          <div aria-hidden className="float-slow pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-lime-400/20 blur-3xl" />
+          <div className="relative flex items-center gap-4">
+            <span className="orb h-12 w-12 shrink-0 rounded-full" />
+            <div className="min-w-0 flex-1">
+              <p className="font-display text-xl font-semibold">{store.story_answer.length ? t('Your story', 'Tu historia') : t('Let’s get to know you', 'Conozcámonos')}</p>
+              <p className="text-xs text-white/65">
+                {store.story_answer.length
+                  ? t(`${store.story_answer.length} answers · ${store.story.length} things it knows about you`, `${store.story_answer.length} respuestas · ${store.story.length} cosas que sabe de vos`)
+                  : noExperience
+                    ? t('Your experience and skills come from here: ten open questions — just talk.', 'Tu experiencia y tus habilidades salen de acá: diez preguntas abiertas — sólo hablá.')
+                    : t('A short chat — your answers make every cover letter sound like you.', 'Una charla corta — tus respuestas hacen que cada carta suene a vos.')}
+              </p>
+            </div>
+          </div>
+          <div className="relative mt-4 flex flex-wrap items-center gap-2">
+            <Link to="/story" className="rounded-full bg-lime-400 px-4 py-2 text-sm font-semibold text-forest-950 transition hover:bg-lime-300">
+              {store.story_answer.length ? t('Keep talking →', 'Seguir charlando →') : t('Start the chat →', 'Empezar la charla →')}
+            </Link>
+            {store.story_answer.length > 0 && noExperience && <span className="text-xs text-white/60">{t('then add it to your CV', 'después agregalo a tu CV')}</span>}
+          </div>
+          {store.story_answer.length > 0 && noExperience && <AddToCV className="relative mt-3" />}
+        </div>
+
+        {/* Upload: for a CV that already exists as a file — added to what is here, or replacing it. */}
+        <button onClick={onUpload}
+                className="group flex w-full items-center gap-4 rounded-2xl border-2 border-dashed border-brand-200 bg-brand-50/40 px-4 py-3.5 text-left transition hover:border-brand-400 hover:bg-brand-50">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-lime-400 text-lg font-bold text-forest-950 transition group-hover:-translate-y-0.5">↑</span>
           <span className="min-w-0 flex-1">
-            <span className="block font-display text-lg font-semibold">{store.story.length ? t('Your story', 'Tu historia') : t('Let’s get to know you', 'Conozcámonos')}</span>
-            <span className="block text-xs text-white/60">
-              {store.story.length
-                ? t(`${store.story.length} things it knows about you · keep chatting`, `${store.story.length} cosas que sabe de vos · seguí charlando`)
-                : t('A short chat — your answers make every cover letter sound like you', 'Una charla corta — tus respuestas hacen que cada carta suene a vos')}
-            </span>
+            <span className="block font-medium text-ink-900">{t('Upload a CV file', 'Subir un CV')}</span>
+            <span className="block text-xs text-ink-500">{t('PDF or Word. Anything it has gets added here — you check it first.', 'PDF o Word. Lo que tenga se suma acá — lo revisás antes.')}</span>
           </span>
-          <span className="text-2xl text-lime-400 transition group-hover:translate-x-1">→</span>
-        </Link>
+          <span className="text-ink-300 transition group-hover:translate-x-0.5 group-hover:text-brand-600">→</span>
+        </button>
 
         {editing ? (
           <Card key={editing} className="page-fwd p-5">

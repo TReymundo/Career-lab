@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { toast } from '../components/Toast.tsx';
 import { Button, Card } from '../components/ui.tsx';
 import Tabs from '../components/Tabs.tsx';
 import { api, type StoryStatus } from '../lib/api.ts';
@@ -37,7 +38,11 @@ export default function StoryPage({ store, reload }: { store: Store; reload: () 
   const [sending, setSending] = useState(false);
   const end = useRef<HTMLDivElement>(null);
 
-  const dictation = useDictation(lang, (text) => setDraft((d) => `${d}${d && !d.endsWith(' ') ? ' ' : ''}${text}`));
+  // The mic listens in its own language: dictating English while the app is in Spanish (or the
+  // reverse) is the main cause of mis-heard words.
+  const [micLang, setMicLang] = useState<'en' | 'es'>(() => { try { return (localStorage.getItem('career-lab-mic') as 'en' | 'es') || lang; } catch { return lang; } });
+  useEffect(() => { try { localStorage.setItem('career-lab-mic', micLang); } catch { /* private window */ } }, [micLang]);
+  const dictation = useDictation(micLang, (text) => setDraft((d) => `${d}${d && !d.endsWith(' ') ? ' ' : ''}${text}`));
 
   useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [msgs]);
   useEffect(() => () => stopSpeaking(), []);
@@ -123,7 +128,7 @@ export default function StoryPage({ store, reload }: { store: Store; reload: () 
               )}
               {canSpeak() && <VoiceToggle on={voice} set={setVoice} />}
             </div>
-            {(finished || !open.length) && <Link to="/cv" className="mt-5 inline-block text-sm text-brand-700 hover:underline">{t('← Back to your CV', '← Volver a tu CV')}</Link>}
+            {done.size > 0 && <AddToCV className="mt-6" />}
           </div>
         )}
 
@@ -184,7 +189,19 @@ export default function StoryPage({ store, reload }: { store: Store; reload: () 
                 </div>
               </div>
               <div className="mt-2 flex items-center justify-between text-xs text-ink-400">
-                <span>{dictation.error && dictation.error !== 'no-speech' ? t('The mic is not available here — try Chrome or Edge, and allow the microphone.', 'El micrófono no está disponible acá — probá Chrome o Edge, y permití el micrófono.') : t('Ctrl+Enter to send', 'Ctrl+Enter para enviar')}</span>
+                <span className="flex items-center gap-2">
+                  {dictation.supported && (
+                    <span className="flex overflow-hidden rounded-full border border-line" title={t('Which language you will speak in', 'En qué idioma vas a hablar')}>
+                      {(['es', 'en'] as const).map((l) => (
+                        <button key={l} onClick={() => { if (dictation.listening) dictation.stop(); setMicLang(l); }}
+                                className={`px-2 py-0.5 text-[10px] font-semibold transition ${micLang === l ? 'bg-forest-900 text-lime-300' : 'text-ink-400 hover:text-ink-900'}`}>
+                          🎙 {l.toUpperCase()}
+                        </button>
+                      ))}
+                    </span>
+                  )}
+                  {dictation.error && dictation.error !== 'no-speech' ? t('The mic is not available here — try Chrome or Edge, and allow the microphone.', 'El micrófono no está disponible acá — probá Chrome o Edge, y permití el micrófono.') : t('Fix any mis-heard word before sending · Ctrl+Enter', 'Corregí cualquier palabra mal escuchada antes de enviar · Ctrl+Enter')}
+                </span>
                 <button onClick={skip} disabled={sending} className="hover:text-ink-900">{t('Skip this one →', 'Saltear esta →')}</button>
               </div>
             </div>
@@ -193,6 +210,37 @@ export default function StoryPage({ store, reload }: { store: Store; reload: () 
       </Card>
 
       <StoryBank store={store} reload={reload} />
+    </div>
+  );
+}
+
+/**
+ * "Add this to my CV": the interview becomes experience entries, skills, languages and a
+ * profile — the parts the build-with-me path no longer asks for as forms.
+ */
+export function AddToCV({ className = '' }: { className?: string }) {
+  const t = useT();
+  const lang = useUILang();
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  return (
+    <div className={className}>
+      <button disabled={busy} onClick={async () => {
+        setBusy(true); setErr('');
+        try {
+          const r = await api.cvFromStory(lang);
+          toast(t('Added to your CV', 'Agregado a tu CV'),
+                t(`${r.added} entries${r.filled.length ? ` plus your ${r.filled.join(', ')}` : ''} — check them in the studio.`,
+                  `${r.added} entradas${r.filled.length ? ` y tu ${r.filled.join(', ')}` : ''} — revisalas en el estudio.`));
+          navigate('/cv');
+        } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+        setBusy(false);
+      }} className="group inline-flex items-center gap-3 rounded-full bg-forest-900 py-2 pl-2 pr-5 text-sm font-semibold text-lime-300 shadow-lg shadow-forest-900/15 transition hover:-translate-y-0.5 hover:bg-forest-800 disabled:opacity-60">
+        <span className={`orb h-8 w-8 rounded-full ${busy ? 'orb-think' : ''}`} />
+        {busy ? t('Writing your experience and skills…', 'Escribiendo tu experiencia y habilidades…') : t('Add this to my CV →', 'Agregar esto a mi CV →')}
+      </button>
+      {err && <p className="mt-2 text-xs text-amber-700">{err}</p>}
     </div>
   );
 }
@@ -250,7 +298,14 @@ function StoryBank({ store, reload }: { store: Store; reload: () => Promise<void
   return (
     <Card className="p-5 xl:sticky xl:top-6">
       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-600">{t('Your story bank', 'Tu banco de historias')}</p>
-      <p className="mt-1 font-display text-2xl font-semibold text-forest-900">{store.story.length} <span className="text-base font-normal text-ink-400">{t('things it knows', 'cosas que sabe')}</span></p>
+      <div className="mt-1 flex items-baseline gap-2">
+        <p className="flex-1 font-display text-2xl font-semibold text-forest-900">{store.story.length} <span className="text-base font-normal text-ink-400">{t('things it knows', 'cosas que sabe')}</span></p>
+        {store.story_answer.length > 0 && !status?.pending && (
+          <button onClick={async () => { setStatus(await api.storyReprocess(lang)); void reload(); }}
+                  title={t('Read all your answers again from scratch', 'Volver a leer todas tus respuestas desde cero')}
+                  className="text-xs text-ink-400 hover:text-brand-700">↻ {t('Re-read answers', 'Releer respuestas')}</button>
+        )}
+      </div>
       {status && status.pending > 0 && (
         <div className={`animate-fade mt-3 flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-xs ${status.retryIn ? 'bg-amber-50 text-amber-800' : 'bg-lime-300/40 text-forest-900'}`}>
           {status.retryIn ? <span>⏳</span> : <span className="orb orb-think h-4 w-4 shrink-0 rounded-full" />}

@@ -38,7 +38,7 @@ export default function Journey({ states }: { states: StepState[] }) {
   useEffect(() => { void api.aiHealth().then(setHealth).catch(() => {}); }, [pathname]);
 
   const routes = health?.routes ?? [];
-  const live = routes.filter((r) => r.resting === 0).length;
+  const live = routes.filter((r) => r.ready).length;
 
   const MORE = [
     { to: '/ai', label: t('AI keys', 'Claves de IA'), icon: '✦' },

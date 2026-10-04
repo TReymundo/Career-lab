@@ -11,7 +11,13 @@ experience. If you have never had a job, the guided path builds your first CV fr
 
 Double-click **`Open Career Lab.bat`** in this folder. It starts everything and opens your
 browser at http://localhost:5273. Keep the black window open while you use the app; closing it
-stops the app. On a first run it installs dependencies, which takes a minute.
+stops the app. On a first run it installs what it needs — including Node.js itself, if the
+computer does not have it — which takes a few minutes.
+
+**On another laptop:** unzip `CareerLab.zip` anywhere (e.g. Documents), double-click
+`Open Career Lab.bat`, and accept the installer prompt if Windows shows one. It starts empty:
+add your AI keys in **More → AI keys**, and to carry your data over, download a backup on the
+old computer (**Track → Download a backup**) and restore it on the new one.
 
 Or, from a terminal:
 
@@ -26,9 +32,10 @@ The repository holds the code only. Two things live outside it on purpose and ne
 up once per machine:
 
 - **Your data** — `data/career-lab.db` is not committed. A fresh clone starts empty; restore a
-  backup from **Pipeline → Download a backup** on the old machine if you want to carry it over.
-- **Your Google API key** — paste it again in the AI step, or put `GOOGLE_API_KEY=…` in a `.env`
-  file next to `package.json`. Neither is ever committed.
+  backup from **Track → Download a backup** on the old machine if you want to carry it over.
+- **Your AI keys and connections** — add AI keys again in **More → AI keys**; Gmail and Google for
+  Jobs are reconnected in **Find jobs → Sources** (they are saved to a local `.env`). None of it
+  is ever committed.
 
 Then `npm install`, `npm run dev`, and open http://localhost:5273.
 

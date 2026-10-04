@@ -86,7 +86,9 @@ export const api = {
     fetch(`/api/kit/${jobId}/decisions`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decisions }) }).then(json),
   kits: () => fetch('/api/kits').then(json) as Promise<{ kits: { job_id: number; application_id: number | null; created_at: string }[] }>,
   storyAnswer: (body: { question: string; answer: string; theme: string; lang: string }) => post('/api/story/answer', body) as Promise<StoryStatus>,
+  cvFromStory: (lang: string) => post('/api/cv/from-story', { lang }) as Promise<{ added: number; filled: string[] }>,
   storyStatus: () => fetch('/api/story/status').then(json) as Promise<StoryStatus>,
+  storyReprocess: (lang: string) => post('/api/story/reprocess', { lang }) as Promise<StoryStatus>,
   storyProcess: (lang: string) => post('/api/story/process', { lang }) as Promise<StoryStatus>,
   storyTurn: (body: { question: string; answer: string; theme: string; isFollowUp: boolean; lang: string }) =>
     post('/api/story/turn', body) as Promise<{ reaction: string; followUp: string; items: { id: number; kind: string; title: string; private: boolean }[]; error?: string }>,
@@ -175,7 +177,7 @@ export interface JourneyStatus {
 }
 export interface AiHealth {
   providers: { id: string; kind: string; name: string; hint: string }[];
-  routes: { id: string; provider: string; label: string; ok: number; resting: number; lastError: string }[];
+  routes: { id: string; provider: string; label: string; ok: number; resting: number; until: string; ready: boolean; lastError: string }[];
 }
 export interface AiStatus { configured: boolean; source: 'env' | 'app' | 'none'; model: string; hint: string }
 export interface BulletSuggestion { original: string; improved: string; why: string; needs: string[] }

@@ -94,6 +94,32 @@ async function modelsFor(key: string): Promise<string[]> {
   return models;
 }
 
+/**
+ * OpenRouter's free models come and go, so they are read from its public catalogue (no key
+ * needed) rather than written down — strongest general-purpose ones first.
+ */
+let freeOR: { at: number; models: string[] } | null = null;
+const OR_PREFERRED = [/nemotron-3-(super|ultra)/i, /gemma-4-31b/i, /qwen3/i, /gemma-4/i, /deepseek/i, /llama-(3\.3-70b|4)/i, /gpt-oss/i, /mistral-(small|medium)/i, /inkling(?!-small)/i];
+// Specialist or tiny models are no good for writing CVs and letters.
+const OR_SKIP = /safety|guard|code|nano|tiny|lfm|preview|omni|-xs-|lightning/i;
+
+async function openRouterModels(): Promise<string[]> {
+  if (freeOR && Date.now() - freeOR.at < 6 * 3600_000) return freeOR.models;
+  let ids: string[] = [];
+  try {
+    const res = await fetch('https://openrouter.ai/api/v1/models', { signal: AbortSignal.timeout(10000) });
+    if (res.ok) {
+      const data = await res.json() as { data?: { id: string; context_length?: number }[] };
+      ids = (data.data ?? []).filter((m) => m.id.endsWith(':free') && (m.context_length ?? 0) >= 16000 && !OR_SKIP.test(m.id)).map((m) => m.id);
+    }
+  } catch { /* keep the fallback below */ }
+  const ordered: string[] = [];
+  for (const re of OR_PREFERRED) for (const id of ids.filter((x) => re.test(x))) if (!ordered.includes(id)) ordered.push(id);
+  const models = (ordered.length ? ordered : ids).slice(0, 4);
+  freeOR = { at: Date.now(), models: models.length ? models : OPENAI_LIKE.openrouter.models };
+  return freeOR.models;
+}
+
 /* ------------------------------------------------------------------ health */
 
 interface Health { restUntil: number; fails: number; ok: number; lastError: string; lastUsed: number }
@@ -106,6 +132,18 @@ const h = (route: string) => {
 
 class RouteError extends Error {
   constructor(message: string, public rest: number, public fatal = false) { super(message); }
+}
+
+/**
+ * Google's free daily quotas reset at midnight Pacific time (04:00–05:00 in Buenos Aires,
+ * depending on daylight saving there). Worked out from the clock rather than guessed.
+ */
+function msUntilPacificMidnight(now = new Date()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles', hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(now).map((p) => [p.type, p.value]));
+  const elapsed = ((Number(parts.hour) % 24) * 3600 + Number(parts.minute) * 60 + Number(parts.second)) * 1000;
+  return Math.max(60_000, 24 * 3600_000 - elapsed + 60_000);
 }
 
 /** A provider that answers with something other than JSON (an outage page, a bare "OK") is down, not broken data. */
@@ -141,7 +179,13 @@ async function callGoogle(key: string, model: string, prompt: string, opts: Call
   });
   if (!res.ok) {
     const body = await res.text();
-    if (res.status === 429) throw new RouteError('limit', /per ?day|daily|PerDay/i.test(body) ? 3600_000 : 65_000);
+    if (res.status === 429) {
+      // Google says which limit was hit. A daily one lasts until its real reset; a per-minute one
+      // comes with the exact wait ("retryDelay": "41s").
+      if (/per ?day|daily|PerDay/i.test(body)) throw new RouteError('daily limit', msUntilPacificMidnight());
+      const delay = Number(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/.exec(body)?.[1] ?? 60);
+      throw new RouteError('per-minute limit', Math.ceil(delay) * 1000 + 1000);
+    }
     if (res.status === 503 || res.status === 500) throw new RouteError('busy', 30_000);
     if (res.status === 400 && /API key not valid/i.test(body)) throw new RouteError('key rejected', 3600_000, true);
     if (res.status === 403) throw new RouteError('key refused', 3600_000, true);
@@ -155,6 +199,12 @@ async function callGoogle(key: string, model: string, prompt: string, opts: Call
   if (!out) throw new RouteError(c?.finishReason === 'MAX_TOKENS' ? 'cut short' : 'empty answer', 5_000);
   return out;
 }
+
+/**
+ * JSON mode on these providers must return an object, so a list is asked for as
+ * {"items": [...]} — asked for as a bare list, models squeeze the answer down to one item.
+ */
+const wireSchema = (schema: Record<string, unknown>) => (schema.type === 'array' ? { type: 'object', properties: { items: schema }, required: ['items'] } : schema);
 
 async function callOpenAI(kind: Exclude<ProviderKind, 'google'>, key: string, model: string, prompt: string, opts: CallOptions): Promise<string> {
   const p = OPENAI_LIKE[kind];
@@ -172,14 +222,17 @@ async function callOpenAI(kind: Exclude<ProviderKind, 'google'>, key: string, mo
       max_tokens: Math.min(opts.maxTokens ?? 8192, kind === 'github' ? 4000 : 8192),
       messages: [
         { role: 'system', content: opts.system },
-        { role: 'user', content: opts.schema ? `${prompt}\n\nReply with JSON only, matching this JSON schema:\n${JSON.stringify(opts.schema)}` : prompt },
+        { role: 'user', content: opts.schema ? `${prompt}\n\nReply with JSON only, matching this JSON schema:\n${JSON.stringify(wireSchema(opts.schema))}${opts.schema.type === 'array' ? '\nPut EVERY item in the "items" list — usually several, not one.' : ''}` : prompt },
       ],
       ...(opts.schema ? { response_format: { type: 'json_object' } } : {}),
     }),
   });
   if (!res.ok) {
     const body = await res.text();
-    if (res.status === 429) throw new RouteError('limit', /day|daily/i.test(body) ? 3600_000 : 65_000);
+    if (res.status === 429) {
+      const after = Number(res.headers.get('retry-after') ?? 0);
+      throw new RouteError(/day|daily/i.test(body) ? 'daily limit' : 'per-minute limit', after > 0 ? after * 1000 + 1000 : /day|daily/i.test(body) ? 3600_000 : 65_000);
+    }
     if (res.status === 401 || res.status === 403) throw new RouteError('key rejected', 3600_000, true);
     if (res.status === 404 || res.status === 400) throw new RouteError(`model unavailable (${res.status})`, 6 * 3600_000);
     throw new RouteError(`error ${res.status}`, 30_000);
@@ -206,7 +259,8 @@ async function routes(needsFiles: boolean): Promise<Route[]> {
   }
   if (!needsFiles) {
     for (const p of list.filter((x) => x.kind !== 'google')) {
-      for (const m of OPENAI_LIKE[p.kind as Exclude<ProviderKind, 'google'>].models) out.push({ id: `${p.id}:${m}`, provider: p, model: m, label: `${KIND_NAME[p.kind]} · ${m}` });
+      const models = p.kind === 'openrouter' ? await openRouterModels() : OPENAI_LIKE[p.kind as Exclude<ProviderKind, 'google'>].models;
+      for (const m of models) out.push({ id: `${p.id}:${m}`, provider: p, model: m, label: `${KIND_NAME[p.kind]} · ${m}` });
     }
   }
   return out;
@@ -220,7 +274,9 @@ db.prepare('DELETE FROM ai_cache WHERE at < ?').run(Date.now() - 14 * 86_400_000
 
 export async function generate(prompt: string, opts: CallOptions): Promise<string> {
   const needsFiles = Boolean(opts.files?.length);
-  const cacheKey = needsFiles ? '' : createHash('sha1').update(JSON.stringify([prompt, opts.system, opts.schema ?? null])).digest('hex');
+  // Bump CACHE_VERSION when the way answers are requested changes, so stale answers are not reused.
+  const CACHE_VERSION = 2;
+  const cacheKey = needsFiles ? '' : createHash('sha1').update(JSON.stringify([CACHE_VERSION, prompt, opts.system, opts.schema ?? null])).digest('hex');
   if (cacheKey) {
     const hit = db.prepare('SELECT v FROM ai_cache WHERE k = ?').get(cacheKey) as { v: string } | undefined;
     if (hit) return hit.v;
@@ -280,7 +336,9 @@ export async function aiHealth() {
     providers: providers().map((p) => ({ id: p.id, kind: p.kind, name: KIND_NAME[p.kind], hint: `…${p.key.slice(-4)}` })),
     routes: list.map((r) => {
       const st = h(r.id);
-      return { id: r.id, provider: r.provider.id, label: r.label, ok: st.ok, resting: Math.max(0, Math.ceil((st.restUntil - Date.now()) / 1000)), lastError: st.lastError };
+      const resting = Math.max(0, Math.ceil((st.restUntil - Date.now()) / 1000));
+      // Ready means "will probably answer": not resting AND its last attempt did not fail.
+      return { id: r.id, provider: r.provider.id, label: r.label, ok: st.ok, resting, until: resting ? new Date(st.restUntil).toISOString() : '', ready: !resting && !st.lastError, lastError: st.lastError };
     }),
   };
 }
@@ -289,7 +347,8 @@ export async function aiHealth() {
 export async function testProvider(id: string) {
   const p = providers().find((x) => x.id === id);
   if (!p) throw new Error('No such key.');
-  const model = p.kind === 'google' ? (await modelsFor(p.key))[0] : OPENAI_LIKE[p.kind as Exclude<ProviderKind, 'google'>].models[0];
+  const model = p.kind === 'google' ? (await modelsFor(p.key))[0]
+    : p.kind === 'openrouter' ? (await openRouterModels())[0] : OPENAI_LIKE[p.kind as Exclude<ProviderKind, 'google'>].models[0];
   try {
     const out = p.kind === 'google'
       ? await callGoogle(p.key, model, 'Reply with the single word OK.', { system: 'Be brief.', maxTokens: 20 })

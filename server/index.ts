@@ -8,7 +8,7 @@ import { applyProposal, emailConfigured, scanMailbox, type Proposal } from './em
 import { DEFAULT_FEEDS, FEEDS, pullJobs, type FeedId } from './feeds.ts';
 import { fileName, toDocx, toPdf } from './export.ts';
 import { applyParsedCV, docxToText, parseCV } from './cvimport.ts';
-import { adaptCV, extractJobs, groqConfigured, improveBullets, interviewTurn, judgeFit, suggestTitles, keyStatus, polishFields, readCV, reviewCV, suggestSources, translate, writeSummary, freeform } from './ai.ts';
+import { adaptCV, draftCVFromInterview, extractJobs, groqConfigured, improveBullets, interviewTurn, judgeFit, suggestTitles, keyStatus, polishFields, readCV, reviewCV, suggestSources, translate, writeSummary, freeform } from './ai.ts';
 import { normalizeJobs } from './normalize.ts';
 import { scoreJobs } from './relevance.ts';
 import { jsearchStatus, pullJSearch } from './jsearch.ts';
@@ -19,7 +19,7 @@ import { addProvider, aiHealth, removeProvider, testProvider, type ProviderKind 
 import { purgeOutOfScope } from './scope.ts';
 import { rankJobs } from './rank.ts';
 import { buildKit, getKit } from './kit.ts';
-import { processStories, storyStatus } from './stories.ts';
+import { processStories, reprocessStories, storyStatus } from './stories.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -169,6 +169,44 @@ app.post('/api/story/answer', (req, res) => {
   res.json(storyStatus());
 });
 app.get('/api/story/status', (_req, res) => res.json(storyStatus()));
+
+/**
+ * "Add this to my CV": experience, skills, languages and a profile drafted from the interview.
+ * New entries are added; profile fields are only filled where they are still empty, so nothing
+ * you typed or edited is overwritten.
+ */
+app.post('/api/cv/from-story', async (req, res) => {
+  const lang = req.body?.lang === 'es' ? 'es' : 'en';
+  const answers = (db.prepare("SELECT question, answer FROM story_answer WHERE theme != 'gap' ORDER BY id").all() as { question: string; answer: string }[])
+    .map((a) => `Q: ${a.question}\nA: ${a.answer}`).join('\n\n');
+  if (!answers.trim()) return res.status(400).json({ error: 'Answer a few interview questions first.' });
+  const exps = db.prepare('SELECT kind, org, title FROM experience').all() as { kind: string; org: string; title: string }[];
+  const existing = exps.map((e) => `- (${e.kind}) ${e.org}${e.title ? ` — ${e.title}` : ''}`).join('\n');
+  try {
+    const draft = await draftCVFromInterview({ answers, existing, lang });
+    const base = (db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS n FROM experience').get() as { n: number }).n + 1;
+    const insert = db.prepare('INSERT INTO experience (kind, org, title, location, start_date, end_date, bullets, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    const seen = new Set(exps.map((e) => `${e.org}|${e.title}`.toLowerCase()));
+    let added = 0;
+    for (const e of draft.entries ?? []) {
+      const key = `${e.org}|${e.title}`.toLowerCase();
+      if (!(e.org || e.title) || seen.has(key)) continue;
+      seen.add(key);
+      insert.run(e.kind, e.org || e.title, e.org ? e.title : '', e.location ?? '', e.start_date ?? '', e.end_date ?? '',
+        JSON.stringify((e.bullets ?? []).filter(Boolean).map((text) => ({ text, es: '', tracks: [] }))), base + added);
+      added++;
+    }
+    const p = db.prepare('SELECT skills, languages, summary FROM profile WHERE id = 1').get() as { skills: string; languages: string; summary: string };
+    const fill: Record<string, string> = {};
+    if (!p.skills.trim() && draft.skills?.trim()) fill.skills = draft.skills.trim();
+    if (!p.languages.trim() && draft.languages?.trim()) fill.languages = draft.languages.trim();
+    if (!p.summary.trim() && draft.summary?.trim()) fill.summary = draft.summary.trim();
+    const cols = Object.keys(fill);
+    if (cols.length) db.prepare(`UPDATE profile SET ${cols.map((c) => `${c} = ?`).join(', ')} WHERE id = 1`).run(...cols.map((c) => fill[c]));
+    res.json({ added, filled: cols });
+  } catch (e) { res.status(502).json({ error: e instanceof Error ? e.message : String(e) }); }
+});
+app.post('/api/story/reprocess', (req, res) => { reprocessStories(req.body?.lang === 'es' ? 'es' : 'en'); res.json(storyStatus()); });
 app.post('/api/story/process', (req, res) => { processStories(req.body?.lang === 'es' ? 'es' : 'en'); res.json(storyStatus()); });
 
 /** One answer with an instant AI turn — still used for the quick gap questions inside a kit. */
@@ -313,29 +351,36 @@ app.post('/api/export', async (req, res) => {
 /**
  * Parse an existing CV. Returns what it found; nothing is written until you confirm.
  *
- * With a Google key the model reads it (PDFs included); without one, Word and text files go
- * through the rule-based reader, and a PDF has to be pasted as text. If the model fails on a
- * text file, the rules still get a go rather than the upload failing outright.
+ * The text is taken out of the file on this computer first (Word, PDF, plain text), so ANY
+ * connected AI can read it — not only Google. Only a scanned PDF (an image, no text inside)
+ * needs Google, which can read images. With no AI at all, the rule-based reader still runs.
  */
+async function pdfToText(buf: Buffer) {
+  const { extractText, getDocumentProxy } = await import('unpdf');
+  const { text } = await extractText(await getDocumentProxy(new Uint8Array(buf)), { mergePages: true });
+  return String(text ?? '').trim();
+}
+
 app.post('/api/cv/parse', async (req, res) => {
   const { text, base64, filename } = req.body ?? {};
   const name = String(filename ?? '').toLowerCase();
   const ai = keyStatus().configured;
   try {
-    if (!text && typeof base64 === 'string' && name.endsWith('.pdf')) {
-      if (!keyStatus().google) {
-        return res.status(400).json({
-          error: 'Reading a PDF needs the free Google AI key. Add it above, or open the PDF, copy all the text and paste it below.',
-        });
-      }
-      const parsed = await readCV({ file: { mimeType: 'application/pdf', data: base64 } });
-      return res.json({ parsed: { ...parsed, unmatched: [] }, chars: 0, via: 'ai' });
-    }
-
     let raw = typeof text === 'string' ? text : '';
     if (!raw && typeof base64 === 'string') {
       const buf = Buffer.from(base64, 'base64');
-      raw = name.endsWith('.docx') ? await docxToText(buf) : buf.toString('utf8');
+      raw = name.endsWith('.docx') ? await docxToText(buf)
+        : name.endsWith('.pdf') ? await pdfToText(buf).catch(() => '')
+        : buf.toString('utf8');
+
+      // A PDF with (almost) no text inside is a scan: only a model that reads images can help.
+      if (name.endsWith('.pdf') && raw.length < 120) {
+        if (!keyStatus().google) {
+          return res.status(400).json({ error: 'This PDF is a scanned image with no text inside. Reading it needs the Google AI key — or open it, copy the text and paste it below.' });
+        }
+        const parsed = await readCV({ file: { mimeType: 'application/pdf', data: base64 } });
+        return res.json({ parsed: { ...parsed, unmatched: [] }, chars: 0, via: 'ai' });
+      }
     }
     if (!raw.trim()) return res.status(400).json({ error: 'nothing to read' });
 
@@ -343,7 +388,7 @@ app.post('/api/cv/parse', async (req, res) => {
       try {
         const parsed = await readCV({ text: raw });
         return res.json({ parsed: { ...parsed, unmatched: [] }, chars: raw.length, via: 'ai' });
-      } catch { /* fall through to the rules */ }
+      } catch { /* every AI is busy: the rules still get a go */ }
     }
     res.json({ parsed: parseCV(raw), chars: raw.length, via: 'rules' });
   } catch (e) {
